@@ -6,14 +6,32 @@ import { logger } from "$logger";
 const MODEL_GEMINI = "googleai/gemini-2.5-flash";
 const OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
-// Initialize Genkit with Google AI plugin using the API key
-const ai = genkit({
-	plugins: [
-		googleAI({
-			apiKey: process.env.GEMINI_API_KEY,
-		}),
-	],
-});
+// Lazy initialization - only create Genkit instance when needed
+let ai: ReturnType<typeof genkit> | null = null;
+
+function getAI(): ReturnType<typeof genkit> {
+	if (ai) return ai;
+
+	const geminiApiKey = process.env.GEMINI_API_KEY;
+	if (!geminiApiKey) {
+		throw new Error("GEMINI_API_KEY is not set in environment variables.");
+	}
+
+	try {
+		ai = genkit({
+			plugins: [
+				googleAI({
+					apiKey: geminiApiKey,
+				}),
+			],
+		});
+		logger.info("[genkit] Genkit initialized successfully");
+		return ai;
+	} catch (err) {
+		logger.error("[genkit] Failed to initialize Genkit:", err);
+		throw new Error("Failed to initialize Genkit. Please check GEMINI_API_KEY.");
+	}
+}
 
 export type ConciergeResult = {
 	title: string;
@@ -142,7 +160,8 @@ async function suggestViaOpenRouter(
 async function suggestViaGenkit(
 	prompt: string,
 ): Promise<{ title: string; year?: number }> {
-	const result = await ai.generate({
+	const aiInstance = getAI();
+	const result = await aiInstance.generate({
 		model: MODEL_GEMINI,
 		prompt: `Suggest a single movie for this request: ${prompt}`,
 		output: { schema: MovieSuggestionSchema },
@@ -184,18 +203,25 @@ export const suggestMovie = async (
 	let suggestedYear: number | undefined;
 
 	// Try OpenRouter first
-	const openRouterResult = await suggestViaOpenRouter(prompt);
-	if (openRouterResult) {
-		suggestedTitle = openRouterResult.title;
-		suggestedYear = openRouterResult.year;
+	try {
+		const openRouterResult = await suggestViaOpenRouter(prompt);
+		if (openRouterResult) {
+			suggestedTitle = openRouterResult.title;
+			suggestedYear = openRouterResult.year;
+			logger.info("[genkit] OpenRouter succeeded with:", suggestedTitle);
+		}
+	} catch (err) {
+		logger.warn("[genkit] OpenRouter failed:", err);
 	}
 
 	// Fallback to Genkit/Gemini if OpenRouter failed or isn't configured
 	if (!suggestedTitle) {
 		try {
+			logger.info("[genkit] Falling back to Genkit/Gemini...");
 			const genkitResult = await suggestViaGenkit(prompt);
 			suggestedTitle = genkitResult.title;
 			suggestedYear = genkitResult.year;
+			logger.info("[genkit] Genkit succeeded with:", suggestedTitle);
 		} catch (err) {
 			logger.error("[genkit] Gemini also failed:", err);
 			throw new Error(
