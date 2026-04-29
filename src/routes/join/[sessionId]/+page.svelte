@@ -23,7 +23,8 @@
 </script>
 
 <svelte:head>
-	<title>Join Lounge — The Director's Lounge</title>
+	<title>Join {data.sessionName ? `${data.sessionName} — ` : ''}The Director's Lounge</title>
+	<meta name="description" content="Join a movie night lounge and vote for the perfect film to watch with friends." />
 </svelte:head>
 
 <main

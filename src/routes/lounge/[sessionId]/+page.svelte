@@ -15,7 +15,8 @@
 </script>
 
 <svelte:head>
-	<title>The Director's Lounge — {sessionId}</title>
+	<title>The Director's Lounge — {selectionLoungeViewModel.session?.name || 'Movie Night'}</title>
+	<meta name="description" content="Join the lounge, nominate movies, vote with golden tickets, and let the AI Concierge pick the perfect watch." />
 </svelte:head>
 
 <div class="min-h-screen px-4 py-8" style="background-color: var(--color-bg);">

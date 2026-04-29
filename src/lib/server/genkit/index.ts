@@ -6,6 +6,15 @@ import { logger } from "$logger";
 const MODEL_GEMINI = "googleai/gemini-2.5-flash";
 const OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
+// Initialize Genkit with Google AI plugin using the API key
+const ai = genkit({
+	plugins: [
+		googleAI({
+			apiKey: process.env.GEMINI_API_KEY,
+		}),
+	],
+});
+
 export type ConciergeResult = {
 	title: string;
 	posterUrl: string;
@@ -133,7 +142,6 @@ async function suggestViaOpenRouter(
 async function suggestViaGenkit(
 	prompt: string,
 ): Promise<{ title: string; year?: number }> {
-	const ai = genkit({ plugins: [googleAI()] });
 	const result = await ai.generate({
 		model: MODEL_GEMINI,
 		prompt: `Suggest a single movie for this request: ${prompt}`,

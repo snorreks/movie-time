@@ -31,9 +31,10 @@
 	};
 </script>
 
-<svelte:head>
-	<title>The Director's Lounge — Admin</title>
-</svelte:head>
+	<svelte:head>
+		<title>The Director's Lounge — Create Movie Night Sessions</title>
+		<meta name="description" content="Create or join a movie night lounge, nominate films, vote with golden tickets, and let the AI Concierge pick the perfect watch. Built for movie lovers." />
+	</svelte:head>
 
 <main
 	class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-12"
