@@ -1,6 +1,10 @@
 # .github/workflows/deploy.yml
 name: Deploy to Vercel
 
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
 on:
   push:
     branches: [master]
@@ -27,8 +31,20 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run type check
-        run: bunx svelte-kit sync && bunx svelte-check --tsconfig ./tsconfig.json
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+      - name: Pull Vercel Environment Information (Preview)
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        if: github.event_name == 'pull_request'
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
@@ -39,8 +55,9 @@ jobs:
           FLAVOR: production
           PUBLIC_FLAVOR: production
 
-      - name: Build project
-        run: bun run build
+      - name: Build Project Artifacts (Preview)
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        if: github.event_name == 'pull_request'
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
@@ -48,23 +65,13 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GCLOUD_PROJECT: ${{ secrets.GCLOUD_PROJECT }}
-          PUBLIC_FLAVOR: production
+          FLAVOR: preview
+          PUBLIC_FLAVOR: preview
 
-      - name: Deploy to Vercel
-        uses: vercel/action@v1
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./
-          vercel-args: '--prod'
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      
-      - name: Preview Deploy
-        uses: vercel/action@v1
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./
+
+      - name: Deploy Project Artifacts to Vercel (Preview)
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
         if: github.event_name == 'pull_request'
