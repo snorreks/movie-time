@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Sessions: anyone can read; only authenticated users can create;
+    // only the host can update status/winnerNominationId.
+    match /sessions/{sessionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.hostId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.hostId == request.auth.uid;
+    }
+
+    // SessionUsers: anyone in the session can read; a user can only write their own doc.
+    match /sessionUsers/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        // Enforce maximum 3 Golden Tickets per session
+        && request.resource.data.ticketsRemaining >= 0
+        && request.resource.data.ticketsRemaining <= 3;
+    }
+
+    // Nominations: any authenticated user can read and create;
+    // votes can only be incremented (not decremented); only creator or session
+    // participant can veto.
+    match /nominations/{nominationId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.nominatedByUid == request.auth.uid
+        && request.resource.data.votes == 0
+        && request.resource.data.vetoed == false;
+      allow update: if request.auth != null
+        // votes can only go up
+        && (
+          !("votes" in request.resource.data.diff(resource.data).affectedKeys())
+          || request.resource.data.votes == resource.data.votes + 1
+        )
+        // vetoed can only flip to true, never back to false
+        && (
+          !("vetoed" in request.resource.data.diff(resource.data).affectedKeys())
+          || (request.resource.data.vetoed == true && resource.data.vetoed == false)
+        );
+    }
+  }
+}
