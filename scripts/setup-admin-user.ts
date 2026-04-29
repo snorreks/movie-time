@@ -1,20 +1,60 @@
 // scripts/setup-admin-user.ts
-import { initializeApp as initAdmin } from "firebase-admin/app";
-import { createUser, getAuth, setCustomUserClaims } from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
+import { getApp } from "./firebase-admin-script";
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@directors-lounge.dev";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123!";
+import * as readline from "node:readline";
+
+const prompt = (message: string): Promise<string> =>
+	new Promise((resolve) => {
+		const rl = readline.createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(message, (answer) => {
+			rl.close();
+			resolve(answer.trim());
+		});
+	});
+
+const parseArgs = () => {
+	const args = process.argv.slice(2);
+	const result: { email?: string; password?: string } = {};
+
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === "--email" && args[i + 1]) {
+			result.email = args[i + 1];
+			i++;
+		} else if (args[i] === "--password" && args[i + 1]) {
+			result.password = args[i + 1];
+			i++;
+		}
+	}
+
+	return result;
+};
 
 const setupAdmin = async () => {
 	try {
-		// Initialize Firebase Admin
-		const app = initAdmin({
-			projectId: "demo-directors-lounge",
-		});
+		const args = parseArgs();
 
-		const auth = getAuth(app);
+		const ADMIN_EMAIL = args.email || process.env.ADMIN_EMAIL || await prompt("Enter admin email: ");
+		let ADMIN_PASSWORD = args.password || process.env.ADMIN_PASSWORD;
 
-		// Check if user already exists
+		if (!ADMIN_PASSWORD) {
+			ADMIN_PASSWORD = await prompt("Enter admin password: ");
+			if (!ADMIN_PASSWORD) {
+				console.error("❌ Password cannot be empty");
+				process.exit(1);
+			}
+		}
+
+		if (!ADMIN_EMAIL) {
+			console.error("❌ Email cannot be empty");
+			process.exit(1);
+		}
+
+		const auth = getAuth(getApp());
+
 		try {
 			const existingUser = await auth.getUserByEmail(ADMIN_EMAIL);
 			console.log(`✅ Admin user already exists: ${ADMIN_EMAIL}`);
@@ -24,19 +64,16 @@ const setupAdmin = async () => {
 			// User doesn't exist, continue to create
 		}
 
-		// Create admin user
-		const user = await createUser(auth, {
+		const user = await auth.createUser({
 			email: ADMIN_EMAIL,
 			password: ADMIN_PASSWORD,
 			emailVerified: true,
 		});
 
-		// Set custom claims to mark as admin
-		await setCustomUserClaims(auth, user.uid, { admin: true });
+		await auth.setCustomUserClaims(user.uid, { admin: true });
 
 		console.log(`✅ Admin user created successfully!`);
 		console.log(`   Email: ${ADMIN_EMAIL}`);
-		console.log(`   Password: ${ADMIN_PASSWORD}`);
 		console.log(`   UID: ${user.uid}`);
 		console.log(`\nUse these credentials to log in as admin.`);
 		process.exit(0);
