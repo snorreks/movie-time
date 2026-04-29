@@ -44,9 +44,11 @@ jobs:
 
       - name: Build Project Artifacts
         run: |
-          # Copy Vercel env vars to root .env for SvelteKit
+          # Copy Vercel env vars to root .env for SvelteKit/Vite
           if [ -f .vercel/.env.production.local ]; then
             cp .vercel/.env.production.local .env.production
+            echo "Copied Vercel env to .env.production"
+            cat .env.production | grep PUBLIC_ || echo "No PUBLIC_ vars found"
           fi
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
@@ -62,9 +64,10 @@ jobs:
 
       - name: Build Project Artifacts (Preview)
         run: |
-          # Copy Vercel env vars to root .env for SvelteKit
+          # Copy Vercel env vars to root .env for SvelteKit/Vite
           if [ -f .vercel/.env.preview.local ]; then
             cp .vercel/.env.preview.local .env.preview
+            echo "Copied Vercel env to .env.preview"
           fi
           vercel build --token=${{ secrets.VERCEL_TOKEN }}
         if: github.event_name == 'pull_request'
