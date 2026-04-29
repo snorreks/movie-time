@@ -1,15 +1,17 @@
 <script lang="ts">
-// src/routes/lounge/[sessionId]/+page.svelte
-import { page } from "$app/stores";
-import { sessionService } from "$lib/client/services/session.svelte";
-import NominationCard from "$lib/components/NominationCard.svelte";
-import { selectionLoungeViewModel } from "$lib/viewmodels/selection-lounge.viewmodel.svelte";
+	// src/routes/lounge/[sessionId]/+page.svelte
+	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
+	import { sessionService } from "$lib/client/services/session.svelte";
+	import NominationCard from "$lib/components/NominationCard.svelte";
+	import { selectionLoungeViewModel } from "$lib/viewmodels/selection-lounge.viewmodel.svelte";
+	import { onMount } from "svelte";
 
-const sessionId = $derived($page.params.sessionId ?? "");
+	const sessionId = $derived($page.params.sessionId ?? "");
 
-$effect(() => {
-	selectionLoungeViewModel.initialize({ sessionId });
-});
+	onMount(() => {
+		selectionLoungeViewModel.initialize({ sessionId });
+	});
 </script>
 
 <svelte:head>

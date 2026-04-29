@@ -1,20 +1,38 @@
 <script lang="ts">
-// src/routes/+page.svelte
-import { fade, fly } from "svelte/transition";
-import { snackbarService } from "$lib/client/services/snackbar.svelte";
-import Snackbar from "$lib/components/Snackbar.svelte";
-import { entryHallViewModel } from "$lib/viewmodels/entry-hall.viewmodel.svelte";
+	// src/routes/+page.svelte
+	import { goto } from "$app/navigation";
+	import { fade, fly } from "svelte/transition";
+	import { snackbarService } from "$lib/client/services/snackbar.svelte";
+	import Snackbar from "$lib/components/Snackbar.svelte";
+	import { adminViewModel } from "$lib/viewmodels/admin.viewmodel.svelte";
 
-let showContent = $state(false);
+	let showContent = $state(false);
 
-$effect(() => {
-	entryHallViewModel.initialize();
-	setTimeout(() => (showContent = true), 100);
-});
+	$effect(() => {
+		adminViewModel.initialize();
+		setTimeout(() => (showContent = true), 100);
+	});
+
+	const handleLogin = async () => {
+		await adminViewModel.login();
+	};
+
+	const handleCreateSession = async () => {
+		await adminViewModel.createSession();
+		if (adminViewModel.createdSessionId) {
+			snackbarService.success("Session created! Share the link below.");
+		}
+	};
+
+	const copyLink = () => {
+		const url = `${window.location.origin}/join/${adminViewModel.createdSessionId}`;
+		navigator.clipboard.writeText(url);
+		snackbarService.success("Link copied to clipboard!");
+	};
 </script>
 
 <svelte:head>
-	<title>The Director's Lounge — Movie Night Redefined</title>
+	<title>The Director's Lounge — Admin</title>
 </svelte:head>
 
 <main
@@ -41,12 +59,6 @@ $effect(() => {
 		aria-hidden="true"
 	></div>
 
-	<div
-		class="pointer-events-none absolute right-10 top-20 h-64 w-64 rounded-full opacity-20 blur-3xl"
-		style="background: radial-gradient(circle, #6366f1 0%, transparent 70%);"
-		aria-hidden="true"
-	></div>
-
 	{#if showContent}
 		<div
 			class="relative z-10 w-full max-w-md"
@@ -55,7 +67,6 @@ $effect(() => {
 		>
 			<!-- Logo / Title Section -->
 			<div class="mb-12 text-center">
-				<!-- Animated icon -->
 				<div
 					class="mb-6 inline-flex items-center justify-center"
 					in:fly={{ y: -20, duration: 600, delay: 300 }}
@@ -77,114 +88,114 @@ $effect(() => {
 					style="color: var(--color-text);"
 					in:fly={{ y: 20, duration: 600, delay: 500 }}
 				>
-					Your cinematic movie night starts here
-					<span class="inline-block animate-pulse">🍿</span>
+					Admin Panel
+					<span class="inline-block animate-pulse">🔑</span>
 				</p>
 			</div>
 
-			<!-- Main Card with Glassmorphism -->
-			<div
-				class="group relative overflow-hidden rounded-3xl border p-8 shadow-2xl"
-				style="background: rgba(255, 255, 255, 0.05);
-					backdrop-filter: blur(20px);
-					border-color: rgba(212, 175, 55, 0.2);"
-				in:fly={{ y: 40, duration: 800, delay: 400 }}
-			>
-				<!-- Glass reflection effect -->
+			{#if !adminViewModel.isLoggedIn}
+				<!-- Login Card -->
 				<div
-					class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-					style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);"
-				></div>
-
-				<!-- Admin Mode Toggle -->
-				<button
-					type="button"
-					onclick={entryHallViewModel.toggleAdminMode}
-					class="mb-4 w-full rounded-lg border px-4 py-2 text-xs font-semibold uppercase tracking-widest transition-all"
-					style="color: var(--color-text); border-color: var(--color-border); opacity: 0.6;"
+					class="group relative overflow-hidden rounded-3xl border p-8 shadow-2xl"
+					style="background: rgba(255, 255, 255, 0.05);
+						backdrop-filter: blur(20px);
+						border-color: rgba(212, 175, 55, 0.2);"
+					in:fly={{ y: 40, duration: 800, delay: 400 }}
 				>
-					{entryHallViewModel.isAdminMode ? '← Back to Guest Mode' : '🔑 Admin Login'}
-				</button>
+					<div
+						class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+						style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);"
+					></div>
 
-				{#if entryHallViewModel.isAdminMode}
-					<!-- Admin Login -->
-					<div class="mb-6 space-y-4">
-						<div>
-							<label
-								for="admin-email"
-								class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
-								style="color: var(--color-text);"
-							>
-								Admin Email
-							</label>
-							<input
-								id="admin-email"
-								type="email"
-								placeholder="admin@directors-lounge.dev"
-								value={entryHallViewModel.adminEmail}
-								oninput={(e) => entryHallViewModel.setAdminEmail((e.currentTarget as HTMLInputElement).value)}
-								class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
-								style="color: var(--color-text);
-									border-color: rgba(255,255,255,0.15);
-									--tw-ring-color: var(--color-primary);
-									--tw-ring-offset-color: transparent;"
-							/>
-						</div>
-						<div>
-							<label
-								for="admin-password"
-								class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
-								style="color: var(--color-text);"
-							>
-								Password
-							</label>
-							<input
-								id="admin-password"
-								type="password"
-								placeholder="Enter password"
-								value={entryHallViewModel.adminPassword}
-								oninput={(e) => entryHallViewModel.setAdminPassword((e.currentTarget as HTMLInputElement).value)}
-								class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
-								style="color: var(--color-text);
-									border-color: rgba(255,255,255,0.15);
-									--tw-ring-color: var(--color-primary);
-									--tw-ring-offset-color: transparent;"
-							/>
-						</div>
-					</div>
-				{/if}
+					<h2 class="mb-6 text-center text-lg font-semibold" style="color: var(--color-text);">
+						Admin Login
+					</h2>
 
-				<!-- Name input -->
-				<div class="mb-6">
-					<label
-						for="username"
-						class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
-						style="color: var(--color-text);"
-					>
-						Your Name
-					</label>
-					<div class="relative">
-						<span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg opacity-40">
-							👤
-						</span>
+					<div class="mb-4">
+						<label
+							for="admin-email"
+							class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
+							style="color: var(--color-text);"
+						>
+							Email
+						</label>
 						<input
-							id="username"
-							type="text"
-							placeholder="e.g. Kubrick"
-							maxlength="30"
-							value={entryHallViewModel.username}
-							oninput={(e) => entryHallViewModel.setUsername((e.currentTarget as HTMLInputElement).value)}
-							class="w-full rounded-xl border bg-transparent py-4 pl-12 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
+							id="admin-email"
+							type="email"
+							placeholder="admin@directors-lounge.dev"
+							value={adminViewModel.adminEmail}
+							oninput={(e) => adminViewModel.setAdminEmail((e.currentTarget as HTMLInputElement).value)}
+							class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
 							style="color: var(--color-text);
 								border-color: rgba(255,255,255,0.15);
 								--tw-ring-color: var(--color-primary);
 								--tw-ring-offset-color: transparent;"
 						/>
 					</div>
-				</div>
 
-				<!-- Session Name (optional) -->
-				{#if entryHallViewModel.isAdminMode}
+					<div class="mb-6">
+						<label
+							for="admin-password"
+							class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
+							style="color: var(--color-text);"
+						>
+							Password
+						</label>
+						<input
+							id="admin-password"
+							type="password"
+							placeholder="Enter password"
+							value={adminViewModel.adminPassword}
+							oninput={(e) => adminViewModel.setAdminPassword((e.currentTarget as HTMLInputElement).value)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') handleLogin();
+							}}
+							class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
+							style="color: var(--color-text);
+								border-color: rgba(255,255,255,0.15);
+								--tw-ring-color: var(--color-primary);
+								--tw-ring-offset-color: transparent;"
+						/>
+					</div>
+
+					<button
+						type="button"
+						onclick={handleLogin}
+						disabled={adminViewModel.isLoading}
+						class="group relative mb-6 w-full overflow-hidden rounded-xl px-6 py-4 text-base font-bold transition-all duration-300
+							hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+						style="background: linear-gradient(135deg, #D4AF37 0%, #F5E6A3 50%, #D4AF37 100%);
+							color: #08080A;
+							box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);"
+					>
+						<div
+							class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-full"
+						></div>
+						{#if adminViewModel.isLoading}
+							<span class="inline-block animate-spin">⏳</span>
+						{:else}
+							🔑 Sign In
+						{/if}
+					</button>
+				</div>
+			{:else}
+				<!-- Session Creation Card -->
+				<div
+					class="group relative overflow-hidden rounded-3xl border p-8 shadow-2xl"
+					style="background: rgba(255, 255, 255, 0.05);
+						backdrop-filter: blur(20px);
+						border-color: rgba(212, 175, 55, 0.2);"
+					in:fly={{ y: 40, duration: 800, delay: 400 }}
+				>
+					<div
+						class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+						style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);"
+					></div>
+
+					<h2 class="mb-6 text-center text-lg font-semibold" style="color: var(--color-text);">
+						Create New Session
+					</h2>
+
 					<div class="mb-6">
 						<label
 							for="session-name"
@@ -198,8 +209,8 @@ $effect(() => {
 							type="text"
 							placeholder="e.g. Friday Night Movies"
 							maxlength="50"
-							value={entryHallViewModel.sessionName}
-							oninput={(e) => entryHallViewModel.setSessionName((e.currentTarget as HTMLInputElement).value)}
+							value={adminViewModel.sessionName}
+							oninput={(e) => adminViewModel.setSessionName((e.currentTarget as HTMLInputElement).value)}
 							class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
 							style="color: var(--color-text);
 								border-color: rgba(255,255,255,0.15);
@@ -207,107 +218,66 @@ $effect(() => {
 								--tw-ring-offset-color: transparent;"
 						/>
 					</div>
-				{/if}
 
-				<!-- Create session button -->
-				<button
-					type="button"
-					onclick={entryHallViewModel.isAdminMode ? entryHallViewModel.adminLogin : entryHallViewModel.createSession}
-					disabled={entryHallViewModel.isLoading}
-					class="group relative mb-6 w-full overflow-hidden rounded-xl px-6 py-4 text-base font-bold transition-all duration-300
-						hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-					style="background: linear-gradient(135deg, #D4AF37 0%, #F5E6A3 50%, #D4AF37 100%);
-						color: #08080A;
-						box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);"
-					in:fly={{ y: 20, duration: 600, delay: 600 }}
-				>
-					<!-- Shimmer effect -->
-					<div
-						class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-full"
-					></div>
-					{#if entryHallViewModel.isLoading}
-						<span class="inline-block animate-spin">⏳</span>
-					{:else}
-						🎥 {entryHallViewModel.isAdminMode ? 'Login & Start Lounge' : 'Start a New Lounge'}
-					{/if}
-				</button>
-
-				<!-- Divider -->
-				<div class="relative mb-6 flex items-center gap-4">
-					<div class="h-px flex-1" style="background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1));"></div>
-					<span class="text-xs font-semibold uppercase tracking-widest opacity-40" style="color: var(--color-text);">
-						or join one
-					</span>
-					<div class="h-px flex-1" style="background: linear-gradient(270deg, transparent, rgba(255,255,255,0.1));"></div>
-				</div>
-
-				<!-- Session ID input -->
-				<div class="mb-6">
-					<label
-						for="session-id"
-						class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
-						style="color: var(--color-text);"
+					<button
+						type="button"
+						onclick={handleCreateSession}
+						disabled={adminViewModel.isLoading}
+						class="group relative mb-6 w-full overflow-hidden rounded-xl px-6 py-4 text-base font-bold transition-all duration-300
+							hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+						style="background: linear-gradient(135deg, #D4AF37 0%, #F5E6A3 50%, #D4AF37 100%);
+							color: #08080A;
+							box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);"
 					>
-						Session ID
-					</label>
-					<div class="relative">
-						<span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg opacity-40">
-							🔑
-						</span>
-						<input
-							id="session-id"
-							type="text"
-							placeholder="Paste your session ID"
-							value={entryHallViewModel.sessionIdInput}
-							oninput={(e) =>
-								entryHallViewModel.setSessionIdInput((e.currentTarget as HTMLInputElement).value)}
-							class="w-full rounded-xl border bg-transparent py-4 pl-12 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
-							style="color: var(--color-text);
-								border-color: rgba(255,255,255,0.15);
-								--tw-ring-color: var(--color-primary);
-								--tw-ring-offset-color: transparent;"
-						/>
-					</div>
-				</div>
+						<div
+							class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-full"
+						></div>
+						{#if adminViewModel.isLoading}
+							<span class="inline-block animate-spin">⏳</span>
+						{:else}
+							🎥 Create Lounge
+						{/if}
+					</button>
 
-				<!-- Join button -->
-				<button
-					type="button"
-					onclick={entryHallViewModel.joinSession}
-					disabled={entryHallViewModel.isLoading}
-					class="group relative w-full overflow-hidden rounded-xl border px-6 py-4 text-base font-bold transition-all duration-300
-						hover:bg-white/5 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-					style="color: var(--color-primary);
-						border-color: rgba(212, 175, 55, 0.3);"
-					in:fly={{ y: 20, duration: 600, delay: 700 }}
-				>
-					<!-- Glow effect -->
-					<div
-						class="pointer-events-none absolute inset-0 opacity-0 blur-xl transition-opacity duration-300 group-hover:opacity-100"
-						style="background: rgba(212, 175, 55, 0.15);"
-					></div>
-					{#if entryHallViewModel.isLoading}
-						<span class="inline-block animate-spin">⏳</span>
-					{:else}
-						🚪 Join Lounge
+					{#if adminViewModel.createdSessionId}
+						<div
+							class="mt-6 rounded-xl border p-4"
+							style="background: rgba(212, 175, 55, 0.1); border-color: rgba(212, 175, 55, 0.3);"
+						>
+							<p class="mb-2 text-xs font-semibold uppercase tracking-widest opacity-60" style="color: var(--color-text);">
+								Share this link:
+							</p>
+							<div class="flex items-center gap-2">
+								<code class="flex-1 rounded-lg bg-black/30 px-3 py-2 text-xs break-all" style="color: var(--color-primary);">
+									{window.location.origin}/join/{adminViewModel.createdSessionId}
+								</code>
+								<button
+									type="button"
+									onclick={copyLink}
+									class="rounded-lg px-4 py-2 text-xs font-semibold transition-all hover:brightness-110"
+									style="background-color: var(--color-primary); color: var(--color-bg);"
+								>
+									Copy
+								</button>
+							</div>
+						</div>
 					{/if}
-				</button>
+				</div>
+			{/if}
 
-				<!-- Error message -->
-				{#if entryHallViewModel.error}
-					<div
-						class="mt-6 rounded-xl border p-4 text-sm"
-						style="background: rgba(200, 35, 51, 0.15);
-							border-color: rgba(200, 35, 51, 0.3);
-							color: var(--color-accent);"
-						in:fly={{ y: 10, duration: 400 }}
-						out:fade={{ duration: 200 }}
-					>
-						<span class="mr-2">⚠</span>
-						{entryHallViewModel.error}
-					</div>
-				{/if}
-			</div>
+			{#if adminViewModel.error}
+				<div
+					class="mt-6 rounded-xl border p-4 text-sm"
+					style="background: rgba(200, 35, 51, 0.15);
+						border-color: rgba(200, 35, 51, 0.3);
+						color: var(--color-accent);"
+					in:fly={{ y: 10, duration: 400 }}
+					out:fade={{ duration: 200 }}
+				>
+					<span class="mr-2">⚠</span>
+					{adminViewModel.error}
+				</div>
+			{/if}
 
 			<!-- Footer -->
 			<p
@@ -333,4 +303,3 @@ $effect(() => {
 		to { transform: rotate(360deg); }
 	}
 </style>
-

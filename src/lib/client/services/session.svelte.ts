@@ -34,6 +34,7 @@ type SessionServiceType = {
 	}): Promise<void>;
 	loadSession(options: { sessionId: string }): Promise<void>;
 	getSavedUsername(): string | undefined;
+	signInAnonymously(): Promise<void>;
 };
 
 class SessionService implements SessionServiceType {
@@ -46,29 +47,36 @@ class SessionService implements SessionServiceType {
 	initialize = async (): Promise<void> => {
 		logger.debug("[SessionService] Initializing Firebase Auth...");
 		return new Promise((resolve) => {
-			const unsubscribe = onAuthStateChanged(auth, async (user) => {
+			const unsubscribe = onAuthStateChanged(auth, (user) => {
 				unsubscribe();
 				if (user) {
 					this.uid = user.uid;
 					logger.info(
 						"[SessionService] Existing auth session found:",
 						user.uid,
+						"isAnonymous:",
+						user.isAnonymous,
 					);
-					resolve();
-					return;
+				} else {
+					logger.debug("[SessionService] No auth session found");
 				}
-				logger.debug(
-					"[SessionService] No auth session, signing in anonymously...",
-				);
-				const credential = await signInAnonymously(auth);
-				this.uid = credential.user.uid;
-				logger.info(
-					"[SessionService] Anonymous auth successful:",
-					credential.user.uid,
-				);
 				resolve();
 			});
 		});
+	};
+
+	signInAnonymously = async (): Promise<void> => {
+		if (this.uid && auth.currentUser?.isAnonymous) {
+			logger.debug("[SessionService] Already signed in anonymously");
+			return;
+		}
+		logger.debug("[SessionService] Signing in anonymously...");
+		const credential = await signInAnonymously(auth);
+		this.uid = credential.user.uid;
+		logger.info(
+			"[SessionService] Anonymous auth successful:",
+			credential.user.uid,
+		);
 	};
 
 	createSession = async (options: { name?: string } = {}): Promise<string> => {

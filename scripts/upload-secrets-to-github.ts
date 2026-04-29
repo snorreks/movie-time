@@ -48,14 +48,14 @@ const main = async () => {
 	console.log("🔑 Uploading secrets to GitHub...\n");
 
 	// Check if gh CLI is authenticated
-	const authCheck = await $`gh auth status`.quiet();
+	const authCheck = await $`gh auth status`.quiet().nothrow();
 	if (authCheck.exitCode !== 0) {
 		console.error("❌ GitHub CLI not authenticated. Run: gh auth login");
 		process.exit(1);
 	}
 
 	// Check if Vercel CLI is available
-	const vercelCheck = await $`bunx vercel --version`.quiet();
+	const vercelCheck = await $`bunx vercel --version`.quiet().nothrow();
 	if (vercelCheck.exitCode !== 0) {
 		console.error("❌ Vercel CLI not found. Run: bun add -d vercel@latest");
 		process.exit(1);
@@ -94,10 +94,21 @@ const main = async () => {
 
 	// Upload PUBLIC_ variables to Vercel
 	const vercelToken = env["VERCEL_TOKEN"];
-	if (!vercelToken) {
-		console.warn(`⚠️  VERCEL_TOKEN not found, skipping Vercel env vars...`);
+	const vercelProjectId = env["VERCEL_PROJECT_ID"];
+	const vercelOrgId = env["VERCEL_ORG_ID"];
+
+	if (!vercelToken || !vercelProjectId) {
+		console.warn(
+			`⚠️  VERCEL_TOKEN or VERCEL_PROJECT_ID not found, skipping Vercel env vars...`,
+		);
 	} else {
 		console.log("\n🚀 Uploading PUBLIC_ variables to Vercel...\n");
+
+		// Explicitly package the Vercel context to pass into Bun's shell
+		const vercelContext = {
+			VERCEL_PROJECT_ID: vercelProjectId,
+			VERCEL_ORG_ID: vercelOrgId || "",
+		};
 
 		for (const varName of VERCEL_PUBLIC_VARS) {
 			const value = env[varName];
@@ -107,16 +118,32 @@ const main = async () => {
 				continue;
 			}
 
+			console.log(`🧹 Deleting existing ${varName} from Vercel...`);
+
+			// Explicitly delete from each environment.
+			// Removed .quiet() so if Vercel throws an interactive prompt or error, you can see it!
+			await $`bunx vercel env rm ${varName} production --yes --token=${vercelToken}`
+				.env(vercelContext)
+				.nothrow();
+			await $`bunx vercel env rm ${varName} preview --yes --token=${vercelToken}`
+				.env(vercelContext)
+				.nothrow();
+			await $`bunx vercel env rm ${varName} development --yes --token=${vercelToken}`
+				.env(vercelContext)
+				.nothrow();
+
 			console.log(`⬆️  Uploading ${varName} to Vercel...`);
 			try {
-				// Remove existing var first (ignore errors if doesn't exist)
-				await $`bunx vercel env rm ${varName} production --yes --token=${vercelToken} 2>&1 || true`;
-				await $`bunx vercel env rm ${varName} preview --yes --token=${vercelToken} 2>&1 || true`;
-				await $`bunx vercel env rm ${varName} development --yes --token=${vercelToken} 2>&1 || true`;
 				// Add to all environments: production, preview, development
-				await $`echo ${value} | bunx vercel env add ${varName} production --yes --token=${vercelToken}`;
-				await $`echo ${value} | bunx vercel env add ${varName} preview --yes --token=${vercelToken}`;
-				await $`echo ${value} | bunx vercel env add ${varName} development --yes --token=${vercelToken}`;
+				await $`echo ${value} | bunx vercel env add ${varName} production --yes --token=${vercelToken}`
+					.env(vercelContext)
+					.quiet();
+				await $`echo ${value} | bunx vercel env add ${varName} preview --yes --token=${vercelToken}`
+					.env(vercelContext)
+					.quiet();
+				await $`echo ${value} | bunx vercel env add ${varName} development --yes --token=${vercelToken}`
+					.env(vercelContext)
+					.quiet();
 				console.log(`✅ ${varName} uploaded to Vercel!`);
 			} catch (err) {
 				console.error(`❌ Failed to upload ${varName} to Vercel:`, err);
@@ -124,7 +151,9 @@ const main = async () => {
 		}
 	}
 
-	console.log("\n✨ Done! Verify with: gh secret list && vercel env ls");
+	console.log(
+		"\n✨ Done! Trigger a redeployment in Vercel for the changes to take effect.",
+	);
 };
 
 main();
