@@ -109,6 +109,10 @@ const main = async () => {
 
 			console.log(`⬆️  Uploading ${varName} to Vercel...`);
 			try {
+				// Remove existing var first (ignore errors if doesn't exist)
+				await $`bunx vercel env rm ${varName} production --yes --token=${vercelToken} 2>&1 || true`;
+				await $`bunx vercel env rm ${varName} preview --yes --token=${vercelToken} 2>&1 || true`;
+				await $`bunx vercel env rm ${varName} development --yes --token=${vercelToken} 2>&1 || true`;
 				// Add to all environments: production, preview, development
 				await $`echo ${value} | bunx vercel env add ${varName} production --yes --token=${vercelToken}`;
 				await $`echo ${value} | bunx vercel env add ${varName} preview --yes --token=${vercelToken}`;
