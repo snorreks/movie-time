@@ -54,6 +54,13 @@ const main = async () => {
 		process.exit(1);
 	}
 
+	// Check if Vercel CLI is available
+	const vercelCheck = await $`bunx vercel --version`.quiet();
+	if (vercelCheck.exitCode !== 0) {
+		console.error("❌ Vercel CLI not found. Run: bun add -d vercel@latest");
+		process.exit(1);
+	}
+
 	// Load .env file
 	const envFile = process.argv[2] || ".env";
 	const envPath = `${process.cwd()}/${envFile}`;
@@ -67,7 +74,7 @@ const main = async () => {
 		process.exit(1);
 	}
 
-	// Upload each secret
+	// Upload GitHub secrets
 	for (const secret of REQUIRED_SECRETS) {
 		const value = env[secret];
 
@@ -76,30 +83,44 @@ const main = async () => {
 			continue;
 		}
 
-		console.log(`⬆️  Uploading ${secret}...`);
+		console.log(`⬆️  Uploading ${secret} to GitHub...`);
 		try {
 			await $`echo ${value} | gh secret set ${secret}`;
-			console.log(`✅ ${secret} uploaded!`);
+			console.log(`✅ ${secret} uploaded to GitHub!`);
 		} catch (err) {
 			console.error(`❌ Failed to upload ${secret}:`, err);
 		}
 	}
 
-	// List PUBLIC_ variables that need to go to Vercel dashboard
-	const publicVars = VERCEL_PUBLIC_VARS.filter((v) => env[v]);
-	if (publicVars.length > 0) {
-		console.log(
-			"\n⚠️  The following PUBLIC_ variables need to be set in Vercel dashboard:",
-		);
-		console.log(
-			"   Go to: https://vercel.com/<org>/<project>/settings/environment-variables",
-		);
-		publicVars.forEach((v) => {
-			console.log(`   - ${v}`);
-		});
+	// Upload PUBLIC_ variables to Vercel
+	const vercelToken = env["VERCEL_TOKEN"];
+	if (!vercelToken) {
+		console.warn(`⚠️  VERCEL_TOKEN not found, skipping Vercel env vars...`);
+	} else {
+		console.log("\n🚀 Uploading PUBLIC_ variables to Vercel...\n");
+
+		for (const varName of VERCEL_PUBLIC_VARS) {
+			const value = env[varName];
+
+			if (!value) {
+				console.warn(`⚠️  ${varName} not found in ${envFile}, skipping...`);
+				continue;
+			}
+
+			console.log(`⬆️  Uploading ${varName} to Vercel...`);
+			try {
+				// Add to all environments: production, preview, development
+				await $`echo ${value} | bunx vercel env add ${varName} production --yes --token=${vercelToken}`;
+				await $`echo ${value} | bunx vercel env add ${varName} preview --yes --token=${vercelToken}`;
+				await $`echo ${value} | bunx vercel env add ${varName} development --yes --token=${vercelToken}`;
+				console.log(`✅ ${varName} uploaded to Vercel!`);
+			} catch (err) {
+				console.error(`❌ Failed to upload ${varName} to Vercel:`, err);
+			}
+		}
 	}
 
-	console.log("\n✨ Done! Verify with: gh secret list");
+	console.log("\n✨ Done! Verify with: gh secret list && vercel env ls");
 };
 
 main();
