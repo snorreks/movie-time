@@ -44,12 +44,18 @@ jobs:
 
       - name: Build Project Artifacts
         run: |
-          # Copy local .env to .env.production for SvelteKit/Vite to read PUBLIC_ vars
-          if [ -f .env ]; then
-            cp .env .env.production
-            echo "Copied .env to .env.production"
-            cat .env.production | grep PUBLIC_FIREBASE | head -2
-          fi
+          # Create .env.production with PUBLIC_ vars from GitHub secrets
+          cat > .env.production << 'EOF'
+          PUBLIC_FIREBASE_API_KEY="${{ secrets.PUBLIC_FIREBASE_API_KEY }}"
+          PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.PUBLIC_FIREBASE_AUTH_DOMAIN }}"
+          PUBLIC_FIREBASE_PROJECT_ID="${{ secrets.PUBLIC_FIREBASE_PROJECT_ID }}"
+          PUBLIC_FIREBASE_STORAGE_BUCKET="${{ secrets.PUBLIC_FIREBASE_STORAGE_BUCKET }}"
+          PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}"
+          PUBLIC_FIREBASE_APP_ID="${{ secrets.PUBLIC_FIREBASE_APP_ID }}"
+          PUBLIC_LOG_LEVEL="${{ secrets.PUBLIC_LOG_LEVEL }}"
+          EOF
+          echo "Created .env.production with PUBLIC_ vars"
+          head -3 .env.production
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         env:
@@ -64,11 +70,17 @@ jobs:
 
       - name: Build Project Artifacts (Preview)
         run: |
-          # Copy local .env to .env.preview for SvelteKit/Vite to read PUBLIC_ vars
-          if [ -f .env ]; then
-            cp .env .env.preview
-            echo "Copied .env to .env.preview"
-          fi
+          # Create .env.preview with PUBLIC_ vars from GitHub secrets
+          cat > .env.preview << 'EOF'
+          PUBLIC_FIREBASE_API_KEY="${{ secrets.PUBLIC_FIREBASE_API_KEY }}"
+          PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.PUBLIC_FIREBASE_AUTH_DOMAIN }}"
+          PUBLIC_FIREBASE_PROJECT_ID="${{ secrets.PUBLIC_FIREBASE_PROJECT_ID }}"
+          PUBLIC_FIREBASE_STORAGE_BUCKET="${{ secrets.PUBLIC_FIREBASE_STORAGE_BUCKET }}"
+          PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}"
+          PUBLIC_FIREBASE_APP_ID="${{ secrets.PUBLIC_FIREBASE_APP_ID }}"
+          PUBLIC_LOG_LEVEL="${{ secrets.PUBLIC_LOG_LEVEL }}"
+          EOF
+          echo "Created .env.preview with PUBLIC_ vars"
           vercel build --token=${{ secrets.VERCEL_TOKEN }}
         if: github.event_name == 'pull_request'
         env:
