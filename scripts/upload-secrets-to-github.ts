@@ -120,8 +120,7 @@ const main = async () => {
 
 			console.log(`🧹 Deleting existing ${varName} from Vercel...`);
 
-			// Explicitly delete from each environment.
-			// Removed .quiet() so if Vercel throws an interactive prompt or error, you can see it!
+			// STEP 1: Explicitly DELETE from each environment using `env rm`
 			await $`bunx vercel env rm ${varName} production --yes --token=${vercelToken}`
 				.env(vercelContext)
 				.nothrow();
@@ -134,16 +133,18 @@ const main = async () => {
 
 			console.log(`⬆️  Uploading ${varName} to Vercel...`);
 			try {
-				// Add to all environments: production, preview, development
+				// STEP 2: ADD to all environments using `env add`
+				// Note the "" added to preview to bypass the git branch prompt!
 				await $`echo ${value} | bunx vercel env add ${varName} production --yes --token=${vercelToken}`
 					.env(vercelContext)
 					.quiet();
-				await $`echo ${value} | bunx vercel env add ${varName} preview --yes --token=${vercelToken}`
+				await $`echo ${value} | bunx vercel env add ${varName} preview "" --yes --token=${vercelToken}`
 					.env(vercelContext)
 					.quiet();
 				await $`echo ${value} | bunx vercel env add ${varName} development --yes --token=${vercelToken}`
 					.env(vercelContext)
 					.quiet();
+
 				console.log(`✅ ${varName} uploaded to Vercel!`);
 			} catch (err) {
 				console.error(`❌ Failed to upload ${varName} to Vercel:`, err);
