@@ -51,7 +51,7 @@ jobs:
           PUBLIC_FLAVOR: production
 
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
+        uses: vercel/action@v1
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
@@ -59,9 +59,9 @@ jobs:
           working-directory: ./
           vercel-args: '--prod'
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-
+      
       - name: Preview Deploy
-        uses: amondnet/vercel-action@v25
+        uses: vercel/action@v1
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
