@@ -2,9 +2,9 @@
 import { goto } from "$app/navigation";
 import {
 	getDoc,
-	doc,
 	setDoc,
 	getFirestoreInstance,
+	doc,
 } from "$lib/client/firebase/firestore.js";
 import { sessionService } from "$lib/client/services/session.svelte";
 import { logger } from "$logger";
@@ -19,7 +19,11 @@ type JoinViewModelType = {
 	readonly error: string | undefined;
 	readonly sessionExists: boolean;
 	readonly sessionName: string | undefined;
-	initialize(options: { sessionId: string }): Promise<void>;
+	initialize(options: {
+		sessionId: string;
+		sessionName?: string;
+		sessionExists?: boolean;
+	}): Promise<void>;
 	joinSession(): Promise<void>;
 	setUsername(value: string): void;
 };
@@ -32,23 +36,43 @@ class JoinViewModel implements JoinViewModelType {
 	sessionName: string | undefined = $state(undefined);
 	private _sessionId: string = "";
 
-	initialize = async (options: { sessionId: string }): Promise<void> => {
+	initialize = async (options: {
+		sessionId: string;
+		sessionName?: string;
+		sessionExists?: boolean;
+	}): Promise<void> => {
 		this._sessionId = options.sessionId;
 		logger.debug("[JoinViewModel] Initializing for session:", options.sessionId);
 
-		const db = getFirestoreInstance();
-		const sessionRef = doc(db, "sessions", options.sessionId);
-		const sessionSnap = await getDoc(sessionRef);
-
-		if (!sessionSnap.exists()) {
-			this.error = "This session does not exist.";
+		if (options.sessionExists === false) {
 			this.sessionExists = false;
+			this.error = "This session does not exist.";
 			return;
 		}
 
-		this.sessionExists = true;
-		const data = sessionSnap.data();
-		this.sessionName = data?.["name"];
+		if (options.sessionName !== undefined) {
+			this.sessionExists = true;
+			this.sessionName = options.sessionName;
+			logger.info(
+				"[JoinViewModel] Session loaded from SSR:",
+				options.sessionId,
+			);
+		} else {
+			const db = getFirestoreInstance();
+			const sessionRef = doc(db, "sessions", options.sessionId);
+			const sessionSnap = await getDoc(sessionRef);
+
+			if (!sessionSnap.exists()) {
+				this.error = "This session does not exist.";
+				this.sessionExists = false;
+				return;
+			}
+
+			this.sessionExists = true;
+			const data = sessionSnap.data();
+			this.sessionName = data?.["name"];
+			logger.info("[JoinViewModel] Session found:", options.sessionId);
+		}
 
 		if (typeof localStorage !== "undefined") {
 			const saved = localStorage.getItem(USERNAME_KEY);
@@ -56,8 +80,6 @@ class JoinViewModel implements JoinViewModelType {
 				this.username = saved;
 			}
 		}
-
-		logger.info("[JoinViewModel] Session found:", options.sessionId);
 	};
 
 	joinSession = async (): Promise<void> => {
@@ -83,11 +105,7 @@ class JoinViewModel implements JoinViewModelType {
 				localStorage.setItem(USERNAME_KEY, this.username.trim());
 			}
 
-			const sessionUserDocId = `${this._sessionId}_${uid}`;
-			const sessionUserRef = doc(getFirestoreInstance(), "sessionUsers", sessionUserDocId);
-
-			const sessionUserData: Omit<SessionUser, "id"> = {
-				sessionId: this._sessionId,
+			const newUser: SessionUser = {
 				uid,
 				displayName: this.username.trim(),
 				ticketsRemaining: INITIAL_TICKETS,
@@ -95,7 +113,26 @@ class JoinViewModel implements JoinViewModelType {
 				wantsPizza: false,
 			};
 
-			await setDoc(sessionUserRef, sessionUserData, { merge: true });
+			const db = getFirestoreInstance();
+			const sessionRef = doc(db, "sessions", this._sessionId);
+			const sessionSnap = await getDoc(sessionRef);
+
+			if (!sessionSnap.exists()) {
+				throw new Error("Session not found.");
+			}
+
+			const sessionData = sessionSnap.data() as { users?: SessionUser[] };
+			const existingUser = sessionData.users?.find((u) => u.uid === uid);
+
+			if (!existingUser) {
+				await setDoc(
+					sessionRef,
+					{
+						users: [...(sessionData.users || []), newUser],
+					},
+					{ merge: true },
+				);
+			}
 
 			logger.info("[JoinViewModel] Successfully joined, navigating to lounge...");
 			await goto(`/lounge/${this._sessionId}`);

@@ -1,10 +1,10 @@
 import { googleAI } from "@genkit-ai/googleai";
-import { genkit, z } from "genkit"; // <-- Import z from genkit hereimport { TMDB_API_READ_ACCESS_TOKEN } from "$env/static/private";
-import { logger } from "$logger";
+import { genkit, z } from "genkit";
 import { TMDB_API_READ_ACCESS_TOKEN } from "$env/static/private";
+import { logger } from "$logger";
 
 const MODEL_GEMINI = "googleai/gemini-2.5-flash";
-const OPENROUTER_MODEL = "google/gemini-2.5-flash";
+const OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
 export type ConciergeResult = {
 	title: string;
@@ -67,25 +67,99 @@ async function fetchMovieFromTMDB(
 		title: details.title,
 		posterUrl: details.poster_path
 			? `https://image.tmdb.org/t/p/w500${details.poster_path}`
-			: "", // Fallback if no poster exists
+			: "",
 		genre:
 			details.genres?.map((g: { name: string }) => g.name).join(", ") ||
 			"Unknown",
 		year: new Date(details.release_date).getFullYear(),
-		rating: Math.round(details.vote_average * 10) / 10, // Round to 1 decimal place
+		rating: Math.round(details.vote_average * 10) / 10,
 		synopsis: details.overview || "No synopsis available.",
 	};
 }
 
 /**
- *  Main function: Handles AI suggestion or direct TMDB searches
+ * Use OpenRouter API to get movie suggestion
+ */
+async function suggestViaOpenRouter(
+	prompt: string,
+): Promise<{ title: string; year?: number } | null> {
+	const openRouterKey = process.env.OPENROUTER_API_KEY;
+	if (!openRouterKey) return null;
+
+	try {
+		const response = await fetch(
+			"https://openrouter.ai/api/v1/chat/completions",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${openRouterKey}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: OPENROUTER_MODEL,
+					messages: [
+						{
+							role: "user",
+							content: `Suggest a single movie for: ${prompt}. Return ONLY a JSON object with keys "title" (string) and "year" (number).`,
+						},
+					],
+					response_format: { type: "json_object" },
+				}),
+			},
+		);
+
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as {
+			choices?: Array<{ message?: { content?: string } }>;
+		};
+		const content = data.choices?.[0]?.message?.content;
+		if (!content) return null;
+
+		const parsed = JSON.parse(content);
+		return {
+			title: parsed.title,
+			year: parsed.year,
+		};
+	} catch (err) {
+		logger.warn("[genkit] OpenRouter failed:", err);
+		return null;
+	}
+}
+
+/**
+ * Use Genkit with Zod schema to get movie suggestion
+ */
+async function suggestViaGenkit(
+	prompt: string,
+): Promise<{ title: string; year?: number }> {
+	const ai = genkit({ plugins: [googleAI()] });
+	const result = await ai.generate({
+		model: MODEL_GEMINI,
+		prompt: `Suggest a single movie for this request: ${prompt}`,
+		output: { schema: MovieSuggestionSchema },
+	});
+
+	const output = result.output;
+	if (!output) {
+		throw new Error("Failed to parse Genkit structured output.");
+	}
+
+	return {
+		title: output.title,
+		year: output.year,
+	};
+}
+
+/**
+ * Main function: Handles AI suggestion or direct TMDB searches
  */
 export const suggestMovie = async (
 	prompt: string,
 	useAi: boolean = true,
 ): Promise<ConciergeResult> => {
 	// ---------------------------------------------------------
-	// DIRECT SEARCH FLOW (No AI)
+	// DIRECT SEARCH FLOW (No AI - uses TMDB only)
 	// ---------------------------------------------------------
 	if (!useAi) {
 		const movieData = await fetchMovieFromTMDB(prompt);
@@ -98,69 +172,22 @@ export const suggestMovie = async (
 	// ---------------------------------------------------------
 	// AI SUGGESTION FLOW
 	// ---------------------------------------------------------
-	const openRouterKey = process.env.OPENROUTER_API_KEY;
 	let suggestedTitle = "";
 	let suggestedYear: number | undefined;
 
 	// Try OpenRouter first
-	if (openRouterKey) {
-		try {
-			const response = await fetch(
-				"https://openrouter.ai/api/v1/chat/completions",
-				{
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${openRouterKey}`,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						model: OPENROUTER_MODEL,
-						messages: [
-							{
-								role: "user",
-								content: `Suggest a single movie for: ${prompt}. Return ONLY a JSON object with keys "title" (string) and "year" (number).`,
-							},
-						],
-						response_format: { type: "json_object" },
-					}),
-				},
-			);
-
-			if (response.ok) {
-				const data = (await response.json()) as {
-					choices?: Array<{ message?: { content?: string } }>;
-				};
-				const content = data.choices?.[0]?.message?.content;
-				if (content) {
-					const parsed = JSON.parse(content);
-					suggestedTitle = parsed.title;
-					suggestedYear = parsed.year;
-				}
-			}
-		} catch (err) {
-			logger.warn("[genkit] OpenRouter failed, falling back to Gemini:", err);
-		}
+	const openRouterResult = await suggestViaOpenRouter(prompt);
+	if (openRouterResult) {
+		suggestedTitle = openRouterResult.title;
+		suggestedYear = openRouterResult.year;
 	}
 
 	// Fallback to Genkit/Gemini if OpenRouter failed or isn't configured
 	if (!suggestedTitle) {
 		try {
-			const ai = genkit({ plugins: [googleAI()] });
-			const result = await ai.generate({
-				model: MODEL_GEMINI,
-				prompt: `Suggest a single movie for this request: ${prompt}`,
-				output: { schema: MovieSuggestionSchema },
-			});
-
-			// Extract the structured output enforced by Zod
-			const output = result.output;
-
-			if (!output) {
-				throw new Error("Failed to parse Genkit structured output.");
-			}
-
-			suggestedTitle = output.title;
-			suggestedYear = output.year;
+			const genkitResult = await suggestViaGenkit(prompt);
+			suggestedTitle = genkitResult.title;
+			suggestedYear = genkitResult.year;
 		} catch (err) {
 			logger.error("[genkit] Gemini also failed:", err);
 			throw new Error(

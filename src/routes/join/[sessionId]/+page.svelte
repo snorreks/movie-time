@@ -1,18 +1,22 @@
 <script lang="ts">
 	// src/routes/join/[sessionId]/+page.svelte
-	import { page } from "$app/stores";
 	import { fade, fly } from "svelte/transition";
-	import { snackbarService } from "$lib/client/services/snackbar.svelte";
 	import Snackbar from "$lib/components/Snackbar.svelte";
 	import { joinViewModel } from "$lib/viewmodels/join.viewmodel.svelte";
 
-	const sessionId = $derived($page.params.sessionId ?? "");
+	let { data } = $props<{
+		data: { sessionId: string; sessionExists: boolean; sessionName?: string };
+	}>();
 
 	let showContent = $state(false);
 
 	$effect(() => {
-		if (sessionId) {
-			joinViewModel.initialize({ sessionId });
+		if (data.sessionId) {
+			joinViewModel.initialize({
+				sessionId: data.sessionId,
+				sessionName: data.sessionName,
+				sessionExists: data.sessionExists,
+			});
 		}
 		setTimeout(() => (showContent = true), 100);
 	});

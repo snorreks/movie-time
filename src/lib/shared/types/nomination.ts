@@ -1,10 +1,9 @@
 // src/lib/shared/types/nomination.ts
 
-/** Structured metadata for a nominated movie. */
+/** Structured metadata for a nominated movie. Embedded in session document. */
 export type Nomination = {
-	/** Firestore document ID. */
+	/** Unique ID within the session. */
 	id: string;
-	sessionId: string;
 	nominatedByUid: string;
 	nominatedByName?: string; // Display name of person who nominated
 	nominatedByPhotoURL?: string; // Profile picture

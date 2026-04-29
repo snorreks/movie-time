@@ -89,12 +89,12 @@
 				class="mb-4 text-lg font-semibold"
 				style="font-family: var(--font-display); color: var(--color-text);"
 			>
-				🤖 AI Concierge
+				{selectionLoungeViewModel.useAi ? '🤖 AI Concierge' : '🔍 Direct TMDB Search'}
 			</h2>
 			<div class="flex flex-col gap-3 sm:flex-row">
 				<input
 					type="text"
-					placeholder='Try "a tense sci-fi thriller from the 90s"…'
+					placeholder={selectionLoungeViewModel.useAi ? 'Try "a tense sci-fi thriller from the 90s"…' : 'Enter movie title (e.g. The Matrix)'}
 					value={selectionLoungeViewModel.conciergePrompt}
 					oninput={(e) =>
 						selectionLoungeViewModel.setConciergePrompt(
@@ -114,8 +114,31 @@
 					class="rounded-lg px-5 py-3 text-sm font-semibold transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
 					style="background-color: var(--color-primary); color: var(--color-bg);"
 				>
-					{selectionLoungeViewModel.isConciergeLoading ? '…' : 'Suggest'}
+					{selectionLoungeViewModel.isConciergeLoading ? '…' : selectionLoungeViewModel.useAi ? 'Suggest' : 'Search'}
 				</button>
+			</div>
+			<!-- Toggle between AI and Direct TMDB -->
+			<div class="mt-3 flex items-center gap-2">
+				<button
+					type="button"
+					onclick={() => selectionLoungeViewModel.setUseAi(!selectionLoungeViewModel.useAi)}
+					class="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all"
+					style="color: var(--color-text); border-color: var(--color-border);"
+				>
+					<span class={selectionLoungeViewModel.useAi ? 'opacity-40' : 'text-primary'}>🔍 Direct</span>
+					<div class="relative h-4 w-8 rounded-full bg-gray-600 transition-colors" class:bg-primary={selectionLoungeViewModel.useAi}>
+						<div
+							class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform"
+							style="transform: translateX({selectionLoungeViewModel.useAi ? '18px' : '2px'});"
+						></div>
+					</div>
+					<span class={!selectionLoungeViewModel.useAi ? 'opacity-40' : 'text-primary'}>🤖 AI</span>
+				</button>
+				{#if !selectionLoungeViewModel.useAi}
+					<span class="text-xs opacity-60" style="color: var(--color-text);">
+						Search TMDB directly by title (no AI)
+					</span>
+				{/if}
 			</div>
 			{#if selectionLoungeViewModel.conciergeError}
 				<p

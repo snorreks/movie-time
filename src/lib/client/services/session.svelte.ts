@@ -6,7 +6,6 @@ import {
 	signInAnonymously,
 } from "$lib/client/firebase/auth.js";
 import {
-	addDoc,
 	collection,
 	doc,
 	getDoc,
@@ -86,17 +85,23 @@ class SessionService implements SessionServiceType {
 		}
 		logger.debug("[SessionService] Creating new session for host:", this.uid);
 		const db = getFirestoreInstance();
-		const sessionsRef = collection(db, "sessions");
-		const docRef = await addDoc(sessionsRef, {
+		const sessionsRef = doc(collection(db, "sessions"));
+		const sessionId = sessionsRef.id;
+
+		const newSession: Omit<Session, "id"> = {
 			hostId: this.uid,
 			name: options.name || undefined,
 			status: "lobby",
-			createdAt: serverTimestamp(),
-			winnerNominationId: null,
+			createdAt: serverTimestamp() as Timestamp,
+			winnerNominationId: undefined,
 			pizzaCount: 0,
-		});
-		logger.info("[SessionService] Session created:", docRef.id);
-		return docRef.id;
+			nominations: [],
+			users: [],
+		};
+
+		await setDoc(sessionsRef, newSession);
+		logger.info("[SessionService] Session created:", sessionId);
+		return sessionId;
 	};
 
 	joinSession = async (options: {
@@ -113,6 +118,7 @@ class SessionService implements SessionServiceType {
 			"as",
 			options.displayName,
 		);
+
 		const db = getFirestoreInstance();
 		const sessionRef = doc(db, "sessions", options.sessionId);
 		const sessionSnap = await getDoc(sessionRef);
@@ -132,38 +138,30 @@ class SessionService implements SessionServiceType {
 			logger.debug("[SessionService] Username saved to localStorage");
 		}
 
-		const sessionUserDocId = `${options.sessionId}_${this.uid}`;
-		const sessionUserRef = doc(db, "sessionUsers", sessionUserDocId);
-		const existingSnap = await getDoc(sessionUserRef);
+		const newUser: SessionUser = {
+			uid: this.uid,
+			displayName: options.displayName,
+			ticketsRemaining: INITIAL_TICKETS,
+			votedNominationIds: [],
+			wantsPizza: false,
+		};
 
-		if (!existingSnap.exists()) {
-			logger.debug("[SessionService] Creating new SessionUser document");
-			const sessionUserData: Omit<SessionUser, "id"> = {
-				sessionId: options.sessionId,
-				uid: this.uid,
-				displayName: options.displayName,
-				ticketsRemaining: INITIAL_TICKETS,
-				votedNominationIds: [],
-				wantsPizza: false,
-			};
-			await setDoc(sessionUserRef, sessionUserData);
-		} else {
-			logger.debug("[SessionService] SessionUser already exists");
+		// Add user to session's users array if not already present
+		const sessionData = sessionSnap.data() as Session;
+		const existingUser = sessionData.users?.find((u) => u.uid === this.uid);
+
+		if (!existingUser) {
+			logger.debug("[SessionService] Adding new user to session");
+			await setDoc(
+				sessionRef,
+				{
+					users: [...(sessionData.users || []), newUser],
+				},
+				{ merge: true },
+			);
 		}
 
-		this.currentUser = {
-			id: sessionUserDocId,
-			...(existingSnap.exists()
-				? (existingSnap.data() as Omit<SessionUser, "id">)
-				: {
-						sessionId: options.sessionId,
-						uid: this.uid,
-						displayName: options.displayName,
-						ticketsRemaining: INITIAL_TICKETS,
-						votedNominationIds: [],
-						wantsPizza: false,
-					}),
-		};
+		this.currentUser = existingUser || newUser;
 		logger.info(
 			"[SessionService] Successfully joined session:",
 			options.sessionId,
@@ -197,16 +195,19 @@ class SessionService implements SessionServiceType {
 						}
 						return;
 					}
-					const data = snap.data();
+					const data = snap.data() as Session;
 					this.currentSession = {
+						...data,
 						id: snap.id,
-						hostId: data.hostId as string,
-						status: data.status as "lobby" | "revealed",
-						createdAt: data.createdAt as Timestamp,
-						winnerNominationId:
-							(data.winnerNominationId as string | null) ?? undefined,
-						pizzaCount: (data.pizzaCount as number) ?? 0,
 					};
+
+					// Update current user from session's users array
+					if (this.uid && this.currentSession.users) {
+						this.currentUser = this.currentSession.users.find(
+							(u) => u.uid === this.uid,
+						);
+					}
+
 					logger.debug(
 						"[SessionService] Session updated:",
 						snap.id,

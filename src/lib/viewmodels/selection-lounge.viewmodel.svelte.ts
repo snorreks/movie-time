@@ -2,17 +2,12 @@
 
 import {
 	arrayUnion,
-	collection,
 	doc,
-	getDoc,
-	getDocs,
 	getFirestoreInstance,
 	increment,
-	onSnapshot,
-	orderBy,
-	query,
+	serverTimestamp,
+	setDoc,
 	updateDoc,
-	where,
 	writeBatch,
 } from "$lib/client/firebase/firestore.js";
 import { goto } from "$app/navigation";
@@ -29,6 +24,7 @@ type SelectionLoungeViewModelType = {
 	readonly conciergePrompt: string;
 	readonly isConciergeLoading: boolean;
 	readonly conciergeError: string | undefined;
+	readonly useAi: boolean;
 	readonly isHost: boolean;
 	initialize(options: { sessionId: string }): Promise<void>;
 	submitConciergePrompt(): Promise<void>;
@@ -37,6 +33,7 @@ type SelectionLoungeViewModelType = {
 	togglePizza(): Promise<void>;
 	startReveal(): Promise<void>;
 	setConciergePrompt(value: string): void;
+	setUseAi(value: boolean): void;
 	dispose(): void;
 };
 
@@ -48,20 +45,17 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 	conciergePrompt: string = $state("");
 	isConciergeLoading: boolean = $state(false);
 	conciergeError: string | undefined = $state(undefined);
+	useAi: boolean = $state(true);
 
 	get pizzaUsers(): SessionUser[] {
 		return this.sessionUsers.filter((u) => u.wantsPizza);
 	}
 
 	private _sessionId: string = "";
-	private _unsubNominations: (() => void) | undefined;
-	private _unsubSessionUser: (() => void) | undefined;
-	private _unsubAllUsers: (() => void) | undefined;
+	private _unsubSession: (() => void) | undefined;
 
 	dispose = (): void => {
-		this._unsubNominations?.();
-		this._unsubSessionUser?.();
-		this._unsubAllUsers?.();
+		this._unsubSession?.();
 	};
 
 	get isHost(): boolean {
@@ -81,46 +75,31 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 		await sessionService.loadSession({ sessionId: options.sessionId });
 		this.session = sessionService.currentSession;
+		this.sessionUser = sessionService.currentUser;
 		logger.info("[SelectionLoungeViewModel] Session loaded:", options.sessionId, "status:", this.session?.status);
 
 		const db = getFirestoreInstance();
+		const sessionRef = doc(db, "sessions", options.sessionId);
 
-		const nominationsQuery = query(
-			collection(db, "nominations"),
-			where("sessionId", "==", options.sessionId),
-			orderBy("votes", "desc"),
-		);
+		this._unsubSession = sessionService["_unsubscribeSession"];
 
-		this._unsubNominations = onSnapshot(nominationsQuery, (snap) => {
-			this.nominations = snap.docs.map((d) => {
-				const data = d.data();
-				return {
-					id: d.id,
-					...data,
-					nominatedByName: this.sessionUsers.find((u) => u.uid === data.nominatedByUid)?.displayName,
-					nominatedByPhotoURL: this.sessionUsers.find((u) => u.uid === data.nominatedByUid)?.photoURL,
-				} as Nomination;
-			});
-		});
-
-		if (sessionService.uid) {
-			const sessionUserDocId = `${options.sessionId}_${sessionService.uid}`;
-			const sessionUserRef = doc(db, "sessionUsers", sessionUserDocId);
-			this._unsubSessionUser = onSnapshot(sessionUserRef, (snap) => {
-				if (!snap.exists()) {
-					return;
-				}
-				this.sessionUser = { id: snap.id, ...snap.data() } as SessionUser;
-			});
+		// Use a listener on the session document to update nominations and users
+		const unsub = sessionService["_unsubscribeSession"];
+		if (unsub) {
+			// Already handled by sessionService, just sync data
+			this._syncFromSession();
 		}
+	};
 
-		const allUsersQuery = query(
-			collection(db, "sessionUsers"),
-			where("sessionId", "==", options.sessionId),
+	private _syncFromSession = (): void => {
+		if (!this.session) {
+			return;
+		}
+		this.nominations = this.session.nominations || [];
+		this.sessionUsers = this.session.users || [];
+		this.sessionUser = this.session.users?.find(
+			(u) => u.uid === sessionService.uid,
 		);
-		this._unsubAllUsers = onSnapshot(allUsersQuery, (snap) => {
-			this.sessionUsers = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as SessionUser[];
-		});
 	};
 
 	submitConciergePrompt = async (): Promise<void> => {
@@ -130,13 +109,18 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		this.isConciergeLoading = true;
 		this.conciergeError = undefined;
 		const loadingId = Date.now();
-		snackbarService.loading("🤖 Asking the AI Concierge for suggestions...");
+		snackbarService.loading(
+			this.useAi ? "🤖 Asking the AI Concierge for suggestions..." : "🔍 Searching TMDB directly...",
+		);
 
 		try {
 			const response = await fetch("/api/concierge", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: this.conciergePrompt.trim() }),
+				body: JSON.stringify({
+					prompt: this.conciergePrompt.trim(),
+					useAi: this.useAi,
+				}),
 			});
 
 			const result: unknown = await response.json();
@@ -159,11 +143,12 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 				synopsis: string;
 			};
 
-			const { addDoc, serverTimestamp, collection: col } = await import("$lib/client/firebase/firestore.js");
 			const db = getFirestoreInstance();
-			await addDoc(col(db, "nominations"), {
-				sessionId: this._sessionId,
-				nominatedByUid: sessionService.uid,
+			const sessionRef = doc(db, "sessions", this._sessionId);
+
+			const newNomination: Nomination = {
+				id: Date.now().toString(),
+				nominatedByUid: sessionService.uid!,
 				title: metadata.title,
 				posterUrl: metadata.posterUrl,
 				genre: metadata.genre,
@@ -171,9 +156,15 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 				rating: metadata.rating,
 				synopsis: metadata.synopsis,
 				votes: 0,
+				voters: [],
 				vetoed: false,
 				vetoedByUid: null,
-				createdAt: serverTimestamp(),
+				createdAt: new Date().toISOString(),
+			};
+
+			const currentNominations = this.session?.nominations || [];
+			await updateDoc(sessionRef, {
+				nominations: [...currentNominations, newNomination],
 			});
 
 			snackbarService.success(`✅ "${metadata.title}" added to nominations!`);
@@ -195,12 +186,37 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		if (this.sessionUser.votedNominationIds.includes(options.nominationId)) {
 			return;
 		}
+
 		const db = getFirestoreInstance();
-		await updateDoc(doc(db, "nominations", options.nominationId), { votes: increment(1) });
-		const sessionUserDocId = `${this._sessionId}_${sessionService.uid}`;
-		await updateDoc(doc(db, "sessionUsers", sessionUserDocId), {
-			ticketsRemaining: increment(-1),
-			votedNominationIds: arrayUnion(options.nominationId),
+		const sessionRef = doc(db, "sessions", this._sessionId);
+
+		const updatedNominations = (this.session?.nominations || []).map((nom) => {
+			if (nom.id === options.nominationId) {
+				return {
+					...nom,
+					votes: nom.votes + 1,
+					voters: [...(nom.voters || []), { uid: sessionService.uid!, displayName: this.sessionUser?.displayName || '' }],
+				};
+			}
+			return nom;
+		});
+
+		const updatedUser = this.sessionUser ? {
+			...this.sessionUser,
+			ticketsRemaining: this.sessionUser.ticketsRemaining - 1,
+			votedNominationIds: [...this.sessionUser.votedNominationIds, options.nominationId],
+		} : null;
+
+		const updatedUsers = (this.session?.users || []).map((u) => {
+			if (u.uid === sessionService.uid) {
+				return updatedUser;
+			}
+			return u;
+		});
+
+		await updateDoc(sessionRef, {
+			nominations: updatedNominations,
+			users: updatedUsers,
 		});
 	};
 
@@ -208,50 +224,66 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		if (!sessionService.uid) {
 			return;
 		}
-		const db = getFirestoreInstance();
-		const nomRef = doc(db, "nominations", options.nominationId);
-		const nomSnap = await getDoc(nomRef);
 
-		if (!nomSnap.exists()) {
+		const db = getFirestoreInstance();
+		const sessionRef = doc(db, "sessions", this._sessionId);
+
+		const updatedNominations = (this.session?.nominations || []).map((nom) => {
+			if (nom.id === options.nominationId) {
+				return {
+					...nom,
+					vetoed: true,
+					vetoedByUid: sessionService.uid,
+					vetoReason: options.reason || "No reason given",
+				};
+			}
+			return nom;
+		});
+
+		// Return tickets to users who voted for this nomination
+		const vetoedNom = this.session?.nominations?.find((n) => n.id === options.nominationId);
+		if (!vetoedNom) {
 			return;
 		}
 
-		await updateDoc(nomRef, {
-			vetoed: true,
-			vetoedByUid: sessionService.uid,
-			vetoReason: options.reason || "No reason given",
+		const updatedUsers = (this.session?.users || []).map((u) => {
+			if (u.votedNominationIds.includes(options.nominationId)) {
+				const votesForThis = u.votedNominationIds.filter((id) => id === options.nominationId).length || 1;
+				return {
+					...u,
+					ticketsRemaining: u.ticketsRemaining + votesForThis,
+					votedNominationIds: u.votedNominationIds.filter((id) => id !== options.nominationId),
+				};
+			}
+			return u;
 		});
 
-		const sessionUsersSnap = await getDocs(
-			query(
-				collection(db, "sessionUsers"),
-				where("sessionId", "==", this._sessionId),
-				where("votedNominationIds", "array-contains", options.nominationId),
-			),
-		);
-
-		const batch = writeBatch(db);
-		sessionUsersSnap.docs.forEach((userDoc) => {
-			const userData = userDoc.data() as { votedNominationIds?: string[] };
-			const votedIds: string[] = userData.votedNominationIds || [];
-			const votesForThis = votedIds.filter((id: string) => id === options.nominationId).length || 1;
-			batch.update(userDoc.ref, {
-				ticketsRemaining: increment(votesForThis),
-				votedNominationIds: votedIds.filter((id) => id !== options.nominationId),
-			});
+		await updateDoc(sessionRef, {
+			nominations: updatedNominations,
+			users: updatedUsers,
 		});
-
-		await batch.commit();
 	};
 
 	togglePizza = async (): Promise<void> => {
 		if (!this.sessionUser || !sessionService.uid) {
 			return;
 		}
+
 		const db = getFirestoreInstance();
-		const sessionUserDocId = `${this._sessionId}_${sessionService.uid}`;
-		await updateDoc(doc(db, "sessionUsers", sessionUserDocId), {
-			wantsPizza: !this.sessionUser.wantsPizza,
+		const sessionRef = doc(db, "sessions", this._sessionId);
+
+		const updatedUsers = (this.session?.users || []).map((u) => {
+			if (u.uid === sessionService.uid) {
+				return { ...u, wantsPizza: !u.wantsPizza };
+			}
+			return u;
+		});
+
+		const pizzaCount = updatedUsers.filter((u) => u.wantsPizza).length;
+
+		await updateDoc(sessionRef, {
+			users: updatedUsers,
+			pizzaCount,
 		});
 	};
 
@@ -259,17 +291,38 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		if (!this.isHost) {
 			return;
 		}
+
 		try {
-			const formData = new URLSearchParams();
-			formData.append("_action", "startReveal");
-			const response = await fetch(`/lounge/${this._sessionId}`, {
-				method: "POST",
-				headers: { "Content-Type": "application/x-www-form-urlencoded" },
-				body: formData.toString(),
-			});
-			if (!response.ok) {
-				throw new Error(await response.text() || "Failed to start reveal.");
+			const db = getFirestoreInstance();
+			const sessionRef = doc(db, "sessions", this._sessionId);
+
+			// Select weighted winner from non-vetoed nominations
+			const eligibleNoms = (this.session?.nominations || []).filter((n) => !n.vetoed);
+			if (eligibleNoms.length === 0) {
+				snackbarService.error("No eligible nominations to reveal.");
+				return;
 			}
+
+			const weights = eligibleNoms.map((n) => 1 + n.votes);
+			const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+			let random = Math.random() * totalWeight;
+
+			let winner: Nomination | undefined;
+			for (let i = 0; i < eligibleNoms.length; i++) {
+				random -= weights[i];
+				if (random <= 0) {
+					winner = eligibleNoms[i];
+					break;
+				}
+			}
+			if (!winner) {
+				winner = eligibleNoms[eligibleNoms.length - 1];
+			}
+
+			await updateDoc(sessionRef, {
+				winnerNominationId: winner.id,
+				status: "revealed",
+			});
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] startReveal error:", err);
 		}
@@ -277,6 +330,10 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 	setConciergePrompt = (value: string): void => {
 		this.conciergePrompt = value;
+	};
+
+	setUseAi = (value: boolean): void => {
+		this.useAi = value;
 	};
 }
 

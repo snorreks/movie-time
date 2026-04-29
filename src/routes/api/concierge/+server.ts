@@ -13,9 +13,12 @@ export const POST = async ({ request }) => {
 	}
 
 	let prompt: string;
+	let useAi: boolean = true;
+
 	try {
 		const body = await request.json();
 		prompt = body.prompt;
+		useAi = body.useAi !== false; // default to true if not specified
 	} catch {
 		throw error(400, "Invalid JSON body.");
 	}
@@ -28,11 +31,11 @@ export const POST = async ({ request }) => {
 		throw error(400, "Prompt too long (max 500 characters).");
 	}
 
-	logger.info("[Concierge API] Processing prompt:", prompt.slice(0, 100));
+	logger.info("[Concierge API] Processing prompt:", prompt.slice(0, 100), "useAi:", useAi);
 
 	try {
 		const { suggestMovie } = await import("$lib/server/genkit/index.js");
-		const result = await suggestMovie(prompt);
+		const result = await suggestMovie(prompt, useAi);
 		return json(result);
 	} catch (err) {
 		logger.error("[Concierge API] Error:", err);

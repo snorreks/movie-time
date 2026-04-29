@@ -50,25 +50,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		winnerNominationId,
 	);
 
-	// Fetch all nominations for the reel animation
-	const nominationsSnap = await db
-		.collection("nominations")
-		.where("sessionId", "==", sessionId)
-		.get();
-
-	const nominations: Nomination[] = nominationsSnap.docs.map((d) => {
-		const data = d.data();
-		// Convert Firestore Timestamp to ISO string for serialization
-		const createdAt = data.createdAt?.toDate?.() ?? data.createdAt;
-		return {
-			id: d.id,
-			...data,
-			createdAt:
-				createdAt instanceof Date
-					? createdAt.toISOString()
-					: String(createdAt || ""),
-		} as Nomination;
-	});
+	// Get nominations from session document
+	const nominations: Nomination[] = sessionData?.nominations || [];
 
 	logger.debug(
 		"[reveal/+page.server.ts] Loaded nominations count:",
