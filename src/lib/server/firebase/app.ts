@@ -8,7 +8,6 @@ import {
 } from "firebase-admin/app";
 import {
 	FIREBASE_SERVICE_ACCOUNT,
-	FLAVOR,
 	GCLOUD_PROJECT,
 } from "$env/static/private";
 import { logger } from "$logger";
@@ -18,7 +17,7 @@ import { logger } from "$logger";
  * Checks multiple sources: process.env, and vite mode.
  */
 export const isEmulatorMode = (): boolean => {
-	return FLAVOR === "emulator";
+	return process.env.FLAVOR === "emulator";
 };
 
 /**
