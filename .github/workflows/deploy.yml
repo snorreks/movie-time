@@ -43,7 +43,12 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Build Project Artifacts
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Copy Vercel env vars to root .env for SvelteKit
+          if [ -f .vercel/.env.production.local ]; then
+            cp .vercel/.env.production.local .env.production
+          fi
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
@@ -56,7 +61,12 @@ jobs:
           PUBLIC_FLAVOR: production
 
       - name: Build Project Artifacts (Preview)
-        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Copy Vercel env vars to root .env for SvelteKit
+          if [ -f .vercel/.env.preview.local ]; then
+            cp .vercel/.env.preview.local .env.preview
+          fi
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
         if: github.event_name == 'pull_request'
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
