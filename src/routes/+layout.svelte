@@ -18,14 +18,17 @@ let { children } = $props();
 
 	<!-- Open Graph / Facebook -->
 	<meta property="og:type" content="website" />
-	<meta property="og:title" content="The Director's Lounge" />
+	<meta property="og:title" content="The Director's Lounge — Movie Night Reimagined" />
 	<meta property="og:description" content="Create or join a movie night lounge, nominate films, vote with golden tickets, and let the AI Concierge pick the perfect watch." />
-	<meta property="og:image" content="/android-chrome-192x192.png" />
+	<meta property="og:image" content="https://movie-time-onboardr.vercel.app/og-image.svg" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:site_name" content="The Director's Lounge" />
 
 	<!-- Twitter -->
-	<meta property="twitter:card" content="summary_large_image" />
-	<meta property="twitter:title" content="The Director's Lounge" />
-	<meta property="twitter:description" content="Create or join a movie night lounge, nominate films, vote with golden tickets, and let the AI Concierge pick the perfect watch." />
-	<meta property="twitter:image" content="/android-chrome-192x192.png" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content="The Director's Lounge — Movie Night Reimagined" />
+	<meta name="twitter:description" content="Create or join a movie night lounge, nominate films, vote with golden tickets, and let the AI Concierge pick the perfect watch." />
+	<meta name="twitter:image" content="https://movie-time-onboardr.vercel.app/og-image.svg" />
 </svelte:head>
 {@render children()}
