@@ -4,13 +4,16 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Sessions: anyone can read; only authenticated users can create;
-    // only the host can update status/winnerNominationId.
+    // any authenticated participant can update collaborative fields.
     match /sessions/{sessionId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.hostId == request.auth.uid;
+      // Any authenticated user can update nominations, users, pizzaCount,
+      // winnerNominationId, and status (spin-the-wheel is open to everyone).
       allow update: if request.auth != null
-        && resource.data.hostId == request.auth.uid;
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['nominations', 'users', 'pizzaCount', 'winnerNominationId', 'status']);
     }
 
     // SessionUsers: anyone in the session can read; a user can only write their own doc.

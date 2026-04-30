@@ -3,7 +3,10 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			/** Firebase UID extracted from the session cookie, undefined if not authenticated. */
+			uid: string | undefined;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

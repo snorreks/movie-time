@@ -1,7 +1,7 @@
 // src/lib/client/services/session.svelte.ts
-import { goto } from "$app/navigation";
 import {
 	auth,
+	getIdToken,
 	onAuthStateChanged,
 	signInAnonymously,
 } from "$lib/client/firebase/auth.js";
@@ -27,13 +27,14 @@ type SessionServiceType = {
 	readonly uid: string | undefined;
 	initialize(): Promise<void>;
 	createSession(options: { name?: string }): Promise<string>;
-	joinSession(options: {
-		sessionId: string;
-		displayName: string;
-	}): Promise<void>;
+	joinSession(options: { sessionId: string; displayName: string }): Promise<void>;
 	loadSession(options: { sessionId: string }): Promise<void>;
 	getSavedUsername(): string | undefined;
 	signInAnonymously(): Promise<void>;
+	/** POSTs the current user's ID token to the server so it can set an httpOnly session cookie. */
+	persistSessionCookie(): Promise<void>;
+	/** Asks the server to clear the session cookie (sign-out). */
+	clearSessionCookie(): Promise<void>;
 };
 
 class SessionService implements SessionServiceType {
@@ -72,10 +73,33 @@ class SessionService implements SessionServiceType {
 		logger.debug("[SessionService] Signing in anonymously...");
 		const credential = await signInAnonymously(auth);
 		this.uid = credential.user.uid;
-		logger.info(
-			"[SessionService] Anonymous auth successful:",
-			credential.user.uid,
-		);
+		logger.info("[SessionService] Anonymous auth successful:", credential.user.uid);
+	};
+
+	persistSessionCookie = async (): Promise<void> => {
+		const user = auth.currentUser;
+		if (!user) {
+			logger.warn("[SessionService] persistSessionCookie: no current user");
+			return;
+		}
+		logger.debug("[SessionService] Fetching ID token to persist session cookie...");
+		const idToken = await getIdToken(user);
+		const response = await fetch("/api/auth/session", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ idToken }),
+		});
+		if (!response.ok) {
+			logger.warn("[SessionService] Failed to persist session cookie, status:", response.status);
+			return;
+		}
+		logger.info("[SessionService] Session cookie persisted for uid:", this.uid);
+	};
+
+	clearSessionCookie = async (): Promise<void> => {
+		logger.debug("[SessionService] Clearing session cookie...");
+		await fetch("/api/auth/session", { method: "DELETE" });
+		logger.info("[SessionService] Session cookie cleared");
 	};
 
 	createSession = async (options: { name?: string } = {}): Promise<string> => {
@@ -88,16 +112,19 @@ class SessionService implements SessionServiceType {
 		const sessionsRef = doc(collection(db, "sessions"));
 		const sessionId = sessionsRef.id;
 
-		const newSession: Omit<Session, "id"> = {
+		// Firestore rejects `undefined` values — omit optional fields entirely.
+		const newSession: Record<string, unknown> = {
 			hostId: this.uid,
-			name: options.name || undefined,
 			status: "lobby",
-			createdAt: serverTimestamp() as Timestamp,
-			winnerNominationId: undefined,
+			createdAt: serverTimestamp(),
 			pizzaCount: 0,
 			nominations: [],
 			users: [],
 		};
+
+		if (options.name) {
+			newSession["name"] = options.name;
+		}
 
 		await setDoc(sessionsRef, newSession);
 		logger.info("[SessionService] Session created:", sessionId);
@@ -112,12 +139,7 @@ class SessionService implements SessionServiceType {
 			logger.error("[SessionService] Not authenticated when joining session");
 			throw new Error("Not authenticated. Call initialize() first.");
 		}
-		logger.debug(
-			"[SessionService] Joining session:",
-			options.sessionId,
-			"as",
-			options.displayName,
-		);
+		logger.debug("[SessionService] Joining session:", options.sessionId, "as", options.displayName);
 
 		const db = getFirestoreInstance();
 		const sessionRef = doc(db, "sessions", options.sessionId);
@@ -128,10 +150,7 @@ class SessionService implements SessionServiceType {
 			throw new Error("Session not found. Check the session ID and try again.");
 		}
 
-		logger.info(
-			"[SessionService] Session found, joining as:",
-			options.displayName,
-		);
+		logger.info("[SessionService] Session found, joining as:", options.displayName);
 
 		if (typeof localStorage !== "undefined") {
 			localStorage.setItem(USERNAME_KEY, options.displayName);
@@ -146,7 +165,6 @@ class SessionService implements SessionServiceType {
 			wantsPizza: false,
 		};
 
-		// Add user to session's users array if not already present
 		const sessionData = sessionSnap.data() as Session;
 		const existingUser = sessionData.users?.find((u) => u.uid === this.uid);
 
@@ -154,26 +172,19 @@ class SessionService implements SessionServiceType {
 			logger.debug("[SessionService] Adding new user to session");
 			await setDoc(
 				sessionRef,
-				{
-					users: [...(sessionData.users || []), newUser],
-				},
+				{ users: [...(sessionData.users || []), newUser] },
 				{ merge: true },
 			);
 		}
 
 		this.currentUser = existingUser || newUser;
-		logger.info(
-			"[SessionService] Successfully joined session:",
-			options.sessionId,
-		);
+		logger.info("[SessionService] Successfully joined session:", options.sessionId);
 	};
 
 	loadSession = async (options: { sessionId: string }): Promise<void> => {
 		logger.debug("[SessionService] Loading session:", options.sessionId);
 		if (this._unsubscribeSession) {
-			logger.debug(
-				"[SessionService] Unsubscribing from previous session listener",
-			);
+			logger.debug("[SessionService] Unsubscribing from previous session listener");
 			this._unsubscribeSession();
 		}
 		const db = getFirestoreInstance();
@@ -185,10 +196,7 @@ class SessionService implements SessionServiceType {
 				sessionRef,
 				(snap) => {
 					if (!snap.exists()) {
-						logger.warn(
-							"[SessionService] Session not found in listener:",
-							options.sessionId,
-						);
+						logger.warn("[SessionService] Session not found in listener:", options.sessionId);
 						if (!resolved) {
 							resolved = true;
 							reject(new Error("Session not found."));
@@ -196,31 +204,15 @@ class SessionService implements SessionServiceType {
 						return;
 					}
 					const data = snap.data() as Session;
-					this.currentSession = {
-						...data,
-						id: snap.id,
-					};
+					this.currentSession = { ...data, id: snap.id };
 
-					// Update current user from session's users array
 					if (this.uid && this.currentSession.users) {
-						this.currentUser = this.currentSession.users.find(
-							(u) => u.uid === this.uid,
-						);
+						this.currentUser = this.currentSession.users.find((u) => u.uid === this.uid);
 					}
 
-					logger.debug(
-						"[SessionService] Session updated:",
-						snap.id,
-						"status:",
-						data.status,
-					);
+					logger.debug("[SessionService] Session updated:", snap.id, "status:", data.status);
 
-					if (data.status === "revealed") {
-						logger.info(
-							"[SessionService] Session revealed, navigating to reveal page",
-						);
-						goto(`/lounge/${options.sessionId}/reveal`);
-					}
+					// Navigation on status change is handled by the ViewModel's live sync effect
 					if (!resolved) {
 						resolved = true;
 						resolve();

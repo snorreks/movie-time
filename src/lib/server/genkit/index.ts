@@ -55,15 +55,18 @@ async function fetchMovieFromTMDB(
 	query: string,
 	year?: number,
 ): Promise<ConciergeResult | null> {
+	logger.info("[TMDB] Searching for:", query, year ? `(year: ${year})` : '');
+
 	if (!TMDB_API_READ_ACCESS_TOKEN) {
-		throw new Error(
-			"TMDB_API_READ_ACCESS_TOKEN is missing in environment variables.",
-		);
+		logger.error("[TMDB] TMDB_API_READ_ACCESS_TOKEN is missing in environment variables.");
+		throw new Error("TMDB_API_READ_ACCESS_TOKEN is missing in environment variables.");
 	}
 
 	// 1. Search for the movie
 	let searchUrl = `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`;
 	if (year) searchUrl += `&year=${year}`;
+
+	logger.info("[TMDB] Search URL:", searchUrl.replace(/key=[^&]+/, 'key=REDACTED'));
 
 	const searchRes = await fetch(searchUrl, {
 		headers: {
@@ -72,12 +75,20 @@ async function fetchMovieFromTMDB(
 		},
 	});
 
-	const searchData = await searchRes.json();
-	const firstResult = searchData.results?.[0];
+	logger.info("[TMDB] Search response status:", searchRes.status);
 
-	if (!firstResult) return null;
+	const searchData = await searchRes.json();
+
+	if (!searchData.results || searchData.results.length === 0) {
+		logger.warn("[TMDB] No results found for:", query);
+		return null;
+	}
+
+	const firstResult = searchData.results?.[0];
+	logger.info("[TMDB] First result:", firstResult?.title, "(ID:", firstResult?.id, ")");
 
 	// 2. Fetch specific movie details to get exact genres and better data
+	logger.info("[TMDB] Fetching details for ID:", firstResult.id);
 	const detailsRes = await fetch(
 		`https://api.themoviedb.org/3/movie/${firstResult.id}?language=en-US`,
 		{
@@ -88,8 +99,16 @@ async function fetchMovieFromTMDB(
 		},
 	);
 
+	logger.info("[TMDB] Details response status:", detailsRes.status);
+
 	const details = await detailsRes.json();
 
+	if (!details || details.status_code) {
+		logger.error("[TMDB] Error fetching details:", details.status_message || 'Unknown error');
+		return null;
+	}
+
+	logger.info("[TMDB] Successfully got details for:", details.title);
 	return {
 		title: details.title,
 		posterUrl: details.poster_path
@@ -183,17 +202,35 @@ async function suggestViaGenkit(
  */
 export const suggestMovie = async (
 	prompt: string,
-	useAi: boolean = true,
+	useAi: unknown = true,
 ): Promise<ConciergeResult> => {
+	// Normalize useAi to boolean (handles string "false" from JSON)
+	let useAiBoolean: boolean;
+	if (typeof useAi === 'string') {
+		useAiBoolean = useAi.toLowerCase() !== 'false';
+	} else {
+		useAiBoolean = useAi !== false;
+	}
+	
+	logger.info("[suggestMovie] Called with prompt:", prompt, "useAi:", useAiBoolean);
+
 	// ---------------------------------------------------------
 	// DIRECT SEARCH FLOW (No AI - uses TMDB only)
 	// ---------------------------------------------------------
-	if (!useAi) {
-		const movieData = await fetchMovieFromTMDB(prompt);
-		if (!movieData) {
-			throw new Error(`No movie found on TMDB for "${prompt}".`);
+	if (!useAiBoolean) {
+		logger.info("[suggestMovie] Direct TMDB search for:", prompt);
+		try {
+			const movieData = await fetchMovieFromTMDB(prompt);
+			if (!movieData) {
+				logger.warn("[suggestMovie] No movie found on TMDB for:", prompt);
+				throw new Error(`No movie found on TMDB for "${prompt}".`);
+			}
+			logger.info("[suggestMovie] TMDB found movie:", movieData.title);
+			return movieData;
+		} catch (err) {
+			logger.error("[suggestMovie] TMDB search failed:", err);
+			throw err;
 		}
-		return movieData;
 	}
 
 	// ---------------------------------------------------------

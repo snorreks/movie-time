@@ -18,7 +18,13 @@ export const POST = async ({ request }) => {
 	try {
 		const body = await request.json();
 		prompt = body.prompt;
-		useAi = body.useAi !== false; // default to true if not specified
+		// Handle both boolean and string values for useAi
+		if (typeof body.useAi === 'string') {
+			useAi = body.useAi.toLowerCase() !== 'false';
+		} else {
+			useAi = body.useAi !== false;
+		}
+		logger.info("[Concierge API] Body received:", { prompt: prompt?.slice(0, 50), useAi, rawUseAi: body.useAi });
 	} catch {
 		throw error(400, "Invalid JSON body.");
 	}
@@ -34,11 +40,27 @@ export const POST = async ({ request }) => {
 	logger.info("[Concierge API] Processing prompt:", prompt.slice(0, 100), "useAi:", useAi);
 
 	try {
-		const { suggestMovie } = await import("$lib/server/genkit/index.js");
-		const result = await suggestMovie(prompt, useAi);
+		let result: unknown;
+
+		if (!useAi) {
+			// Direct TMDB search - NO genkit import needed
+			logger.info("[Concierge API] Direct TMDB search (no genkit import)...");
+			const { searchTMDBDirectly } = await import("$lib/server/tmdb-direct.js");
+			result = await searchTMDBDirectly(prompt);
+		} else {
+			// AI search - import genkit module
+			logger.info("[Concierge API] Importing genkit module...");
+			const { suggestMovie } = await import("$lib/server/genkit/index.js");
+			logger.info("[Concierge API] Genkit module imported successfully");
+			result = await suggestMovie(prompt, useAi);
+		}
+
 		return json(result);
 	} catch (err) {
 		logger.error("[Concierge API] Error:", err);
+		if (err instanceof Error && err.stack) {
+			logger.error("[Concierge API] Stack:", err.stack);
+		}
 		const message =
 			err instanceof Error
 				? err.message
