@@ -1,8 +1,9 @@
 <script lang="ts">
 // src/lib/components/GrandReveal.svelte
+
+import { FastAverageColor } from "fast-average-color";
 import { onMount } from "svelte";
 import { fade, fly, scale } from "svelte/transition";
-import { FastAverageColor } from "fast-average-color";
 import { getAvatarUrl } from "$lib/client/services/avatar.svelte";
 import type { Nomination } from "$lib/shared/types/nomination.js";
 import type { SessionUser } from "$lib/shared/types/session-user.js";
@@ -16,26 +17,54 @@ type Props = {
 	onReset: () => void;
 };
 
-const { nominations, winnerNominationId, sessionUsers, onReset }: Props = $props();
+const { nominations, winnerNominationId, sessionUsers, onReset }: Props =
+	$props();
 
 // ─── Reel maths ─────────────────────────────────────────────────
-const REEL_REPEATS = 5;
+const REEL_REPEATS = 15;
 const CARD_W = 156;
 const CARD_GAP = 10;
 const CARD_STEP = CARD_W + CARD_GAP;
 
-const winnerIndex = $derived(nominations.findIndex((n) => n.id === winnerNominationId));
+// 1. Create a "base block" of cards where movies with more votes appear more often.
+// We interleave them so identical movies aren't stuck right next to each other.
+const baseBlock = $derived.by(() => {
+	const block: typeof nominations = [];
+	// Every movie gets at least 1 card. If it has 2 votes, it gets 2 cards, etc.
+	const counts = nominations.map((n) => Math.max(1, n.votes || 0));
+	const maxCardsForAnyMovie = Math.max(...counts, 0);
 
+	for (let i = 0; i < maxCardsForAnyMovie; i++) {
+		nominations.forEach((n, idx) => {
+			// If this movie still has cards left to deal, add it to the block
+			if (counts[idx] > i) {
+				block.push(n);
+			}
+		});
+	}
+	return block;
+});
+
+// 2. Find where the winner is inside our new weighted block
+// (Finding the first occurrence is fine, the math will land on it perfectly)
+const winnerIndex = $derived(
+	baseBlock.findIndex((n) => n.id === winnerNominationId),
+);
+
+// 3. Build the full reel by repeating the weighted base block
 const reelItems = $derived(
-	nominations.length > 0
+	baseBlock.length > 0
 		? [...Array(REEL_REPEATS + 1).keys()].flatMap((r) =>
-				nominations.map((n, i) => ({ ...n, reelKey: `${r}-${i}` })),
+				baseBlock.map((n, i) => ({ ...n, reelKey: `${r}-${i}` })),
 			)
 		: [],
 );
 
-const targetReelIndex = $derived(REEL_REPEATS * nominations.length + winnerIndex);
-const targetTranslateX = $derived(-(targetReelIndex * CARD_STEP - CARD_STEP * 3));
+// 4. Calculate the target X translation based on the size of the base block
+const targetReelIndex = $derived(REEL_REPEATS * baseBlock.length + winnerIndex);
+const targetTranslateX = $derived(
+	-(targetReelIndex * CARD_STEP - CARD_STEP * 3),
+);
 
 // ─── Animation state ─────────────────────────────────────────────
 let animationDone = $state(false);
@@ -48,9 +77,13 @@ const winner = $derived(nominations.find((n) => n.id === winnerNominationId));
 const fac = new FastAverageColor();
 
 const extractWinnerColor = async (): Promise<void> => {
-	if (!winnerImgEl) { return; }
+	if (!winnerImgEl) {
+		return;
+	}
 	try {
-		const result = await fac.getColorAsync(winnerImgEl, { algorithm: "dominant" });
+		const result = await fac.getColorAsync(winnerImgEl, {
+			algorithm: "dominant",
+		});
 		winnerAmbientRgb = `${result.value[0]},${result.value[1]},${result.value[2]}`;
 	} catch {
 		// keep default gold
@@ -64,17 +97,23 @@ let audioUnlocked = false;
 let confettiFired = false;
 
 const unlockAudio = (): void => {
-	if (audioUnlocked) { return; }
+	if (audioUnlocked) {
+		return;
+	}
 	audioUnlocked = true;
-	if (spinAudio) { spinAudio.muted = false; }
-	if (winAudio) { winAudio.muted = false; }
+	if (spinAudio) {
+		spinAudio.muted = false;
+	}
+	if (winAudio) {
+		winAudio.muted = false;
+	}
 };
 
 onMount(() => {
 	spinAudio = new Audio("/sounds/wheel-spin.mp3");
 	winAudio = new Audio("/sounds/winner.mp3");
-	spinAudio.muted = true;
-	winAudio.muted = true;
+	// spinAudio.muted = true;
+	// winAudio.muted = true;
 	spinAudio.volume = 0.5;
 	winAudio.volume = 0.7;
 
@@ -91,10 +130,17 @@ let _keyBuf = "";
 let _keyTimer: ReturnType<typeof setTimeout> | undefined;
 
 const handleKeydown = (e: KeyboardEvent): void => {
-	if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) { return; }
+	if (
+		e.target instanceof HTMLInputElement ||
+		e.target instanceof HTMLTextAreaElement
+	) {
+		return;
+	}
 	_keyBuf += e.key.toLowerCase();
 	clearTimeout(_keyTimer);
-	_keyTimer = setTimeout(() => { _keyBuf = ""; }, 1000);
+	_keyTimer = setTimeout(() => {
+		_keyBuf = "";
+	}, 1000);
 	if (_keyBuf.endsWith("ff")) {
 		logger.info("[GrandReveal] 'ff' chord — resetting");
 		_keyBuf = "";
@@ -106,15 +152,24 @@ const handleKeydown = (e: KeyboardEvent): void => {
 // ─── Reel animation ──────────────────────────────────────────────
 $effect(() => {
 	if (!reelEl || nominations.length === 0 || winnerIndex === -1) {
-		logger.warn("[GrandReveal] Can't start reel:", { hasEl: !!reelEl, count: nominations.length, winnerIndex });
+		logger.warn("[GrandReveal] Can't start reel:", {
+			hasEl: !!reelEl,
+			count: nominations.length,
+			winnerIndex,
+		});
 		return;
 	}
-	logger.info("[GrandReveal] Starting reel — winner:", winner?.title, "targetX:", targetTranslateX);
+	logger.info(
+		"[GrandReveal] Starting reel — winner:",
+		winner?.title,
+		"targetX:",
+		targetTranslateX,
+	);
 
 	reelEl.style.transition = "none";
 	reelEl.style.transform = "translateX(0px)";
 	void reelEl.offsetWidth;
-	reelEl.style.transition = "transform 4.5s cubic-bezier(0.22, 1, 0.36, 1)";
+	reelEl.style.transition = "transform 7s cubic-bezier(0.22, 1, 0.36, 1)";
 	reelEl.style.transform = `translateX(${targetTranslateX}px)`;
 
 	spinAudio?.play().catch(() => {});
@@ -123,21 +178,41 @@ $effect(() => {
 		logger.info("[GrandReveal] Reel settled — revealing winner");
 		animationDone = true;
 		spinAudio?.pause();
-		if (spinAudio) { spinAudio.currentTime = 0; }
+		if (spinAudio) {
+			spinAudio.currentTime = 0;
+		}
 		winAudio?.play().catch(() => {});
 
 		if (!confettiFired) {
 			confettiFired = true;
-			import("canvas-confetti").then((m) => {
-				const confetti = m.default || m;
-				confetti({ particleCount: 120, spread: 80, origin: { y: 0.55 }, colors: ["#d4af37", "#f5e6a3", "#ffffff"] });
-				setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.4 }, scalar: 1.4 }), 600);
-			}).catch(() => {});
+			import("canvas-confetti")
+				.then((m) => {
+					const confetti = m.default || m;
+					confetti({
+						particleCount: 120,
+						spread: 80,
+						origin: { y: 0.55 },
+						colors: ["#d4af37", "#f5e6a3", "#ffffff"],
+					});
+					setTimeout(
+						() =>
+							confetti({
+								particleCount: 60,
+								spread: 120,
+								origin: { y: 0.4 },
+								scalar: 1.4,
+							}),
+						600,
+					);
+				})
+				.catch(() => {});
 		}
 	};
 
 	reelEl.addEventListener("transitionend", onEnd, { once: true });
-	return () => { reelEl?.removeEventListener("transitionend", onEnd); };
+	return () => {
+		reelEl?.removeEventListener("transitionend", onEnd);
+	};
 });
 
 const getUserAvatar = (uid: string): string => {
@@ -279,10 +354,6 @@ const getUserName = (uid: string): string =>
 					{/if}
 				</div>
 			</div>
-
-			<p class="mt-4 text-center text-xs" style="color: rgba(255,255,255,0.15);">
-				Press <kbd class="rounded px-1 py-0.5 font-mono text-xs" style="background: rgba(255,255,255,0.07);">f</kbd><kbd class="rounded px-1 py-0.5 font-mono text-xs" style="background: rgba(255,255,255,0.07);">f</kbd> to reset
-			</p>
 		</div>
 	{/if}
 </div>

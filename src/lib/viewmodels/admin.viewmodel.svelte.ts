@@ -1,22 +1,27 @@
 // src/lib/viewmodels/admin.viewmodel.svelte.ts
 import { auth, signInWithEmailAndPassword } from "$lib/client/firebase/auth.js";
+import { updateProfile } from "firebase/auth";
 import { sessionService } from "$lib/client/services/session.svelte";
 import { logger } from "$logger";
 
 /** Public API for the Admin ViewModel. */
 type AdminViewModelType = {
-	readonly isLoggedIn: boolean;
+	isLoggedIn: boolean;
 	readonly adminEmail: string;
 	readonly adminPassword: string;
+	readonly adminUsername: string;
 	readonly sessionName: string;
 	readonly isLoading: boolean;
 	readonly error: string | undefined;
 	readonly createdSessionId: string | undefined;
+	readonly currentUsername: string | undefined;
 	initialize(): Promise<void>;
 	login(): Promise<void>;
 	createSession(): Promise<void>;
+	updateUsername(): Promise<void>;
 	setAdminEmail(value: string): void;
 	setAdminPassword(value: string): void;
+	setAdminUsername(value: string): void;
 	setSessionName(value: string): void;
 };
 
@@ -24,10 +29,12 @@ class AdminViewModel implements AdminViewModelType {
 	isLoggedIn: boolean = $state(false);
 	adminEmail: string = $state("");
 	adminPassword: string = $state("");
+	adminUsername: string = $state("");
 	sessionName: string = $state("");
 	isLoading: boolean = $state(false);
 	error: string | undefined = $state(undefined);
 	createdSessionId: string | undefined = $state(undefined);
+	currentUsername: string | undefined = $state(undefined);
 
 	initialize = async (): Promise<void> => {
 		logger.debug("[AdminViewModel] Initializing...");
@@ -37,6 +44,7 @@ class AdminViewModel implements AdminViewModelType {
 				if (user && !user.isAnonymous) {
 					logger.info("[AdminViewModel] Admin already logged in:", user.email);
 					this.isLoggedIn = true;
+					this.currentUsername = user.displayName ?? undefined;
 					sessionService.uid = user.uid;
 				}
 				resolve();
@@ -52,14 +60,23 @@ class AdminViewModel implements AdminViewModelType {
 		this.isLoading = true;
 		this.error = undefined;
 		try {
-			await signInWithEmailAndPassword(
+			const userCredential = await signInWithEmailAndPassword(
 				auth,
 				this.adminEmail.trim(),
 				this.adminPassword,
 			);
 			logger.info("[AdminViewModel] Admin login successful");
 			this.isLoggedIn = true;
-			sessionService.uid = auth.currentUser?.uid;
+			this.currentUsername = userCredential.user.displayName ?? undefined;
+			sessionService.uid = userCredential.user.uid;
+
+			// Set session cookie for the admin user
+			const idToken = await userCredential.user.getIdToken();
+			await fetch("/api/auth/session", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ idToken }),
+			});
 		} catch (err) {
 			logger.error("[AdminViewModel] Admin login failed:", err);
 			this.error = err instanceof Error ? "Invalid email or password." : "Login failed.";
@@ -98,8 +115,36 @@ class AdminViewModel implements AdminViewModelType {
 		this.adminPassword = value;
 	};
 
+	setAdminUsername = (value: string): void => {
+		this.adminUsername = value;
+	};
+
 	setSessionName = (value: string): void => {
 		this.sessionName = value;
+	};
+
+	updateUsername = async (): Promise<void> => {
+		const user = auth.currentUser;
+		if (!user) {
+			this.error = "Not logged in.";
+			return;
+		}
+		if (!this.adminUsername.trim()) {
+			this.error = "Username cannot be empty.";
+			return;
+		}
+		this.isLoading = true;
+		this.error = undefined;
+		try {
+			await updateProfile(user, { displayName: this.adminUsername.trim() });
+			this.currentUsername = this.adminUsername.trim();
+			logger.info("[AdminViewModel] Username updated to:", this.adminUsername.trim());
+		} catch (err) {
+			logger.error("[AdminViewModel] Failed to update username:", err);
+			this.error = err instanceof Error ? err.message : "Failed to update username.";
+		} finally {
+			this.isLoading = false;
+		}
 	};
 }
 

@@ -1,13 +1,14 @@
 <script lang="ts">
 // src/routes/lounge/[sessionId]/+page.svelte
-import { fade, fly, scale } from "svelte/transition";
+
 import { onMount } from "svelte";
-import { sessionService } from "$lib/client/services/session.svelte";
-import { selectionLoungeViewModel } from "$lib/viewmodels/selection-lounge.viewmodel.svelte";
+import { fade, fly, scale } from "svelte/transition";
 import { getAvatarUrl } from "$lib/client/services/avatar.svelte";
-import NominationCard from "$lib/components/NominationCard.svelte";
+import { sessionService } from "$lib/client/services/session.svelte";
 import GrandReveal from "$lib/components/GrandReveal.svelte";
+import NominationCard from "$lib/components/NominationCard.svelte";
 import Snackbar from "$lib/components/Snackbar.svelte";
+import { selectionLoungeViewModel } from "$lib/viewmodels/selection-lounge.viewmodel.svelte";
 
 let { data } = $props<{
 	data: {
@@ -293,9 +294,11 @@ onMount(() => {
 								hasVoted={selectionLoungeViewModel.sessionUser?.votedNominationIds.includes(nomination.id) ?? false}
 								ticketsRemaining={selectionLoungeViewModel.sessionUser?.ticketsRemaining ?? 0}
 								currentUserId={sessionService.uid}
+								canDelete={nomination.nominatedByUid === sessionService.uid}
 								onVote={() => selectionLoungeViewModel.castVote({ nominationId: nomination.id })}
 								onCancelVote={() => selectionLoungeViewModel.cancelVote({ nominationId: nomination.id })}
 								onVeto={(reason) => selectionLoungeViewModel.vetoNomination({ nominationId: nomination.id, reason })}
+								onDelete={() => selectionLoungeViewModel.deleteNomination({ nominationId: nomination.id })}
 								sessionUsers={selectionLoungeViewModel.sessionUsers}
 							/>
 						</div>
@@ -303,8 +306,9 @@ onMount(() => {
 				</div>
 			{/if}
 
-			<!-- ── Grand Reveal button ── -->
-			{#if selectionLoungeViewModel.sessionUser && selectionLoungeViewModel.nominations.some((n) => !n.vetoed)}
+		<!-- ── Grand Reveal button ── -->
+		{#if selectionLoungeViewModel.isHost}
+			{#if selectionLoungeViewModel.canStartReveal}
 				<div class="mt-16 flex justify-center pb-12" in:fly={{ y: 12, duration: 400 }}>
 					<button
 						type="button"
@@ -317,6 +321,21 @@ onMount(() => {
 					</button>
 				</div>
 			{/if}
+		{:else if selectionLoungeViewModel.nominations.some((n) => !n.vetoed)}
+			<div class="mt-16 flex justify-center pb-12" in:fly={{ y: 12, duration: 400 }}>
+				<div
+					class="rounded-2xl px-8 py-4 text-center"
+					style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);"
+				>
+					<p class="text-sm font-medium" style="color: rgba(255,255,255,0.4);">
+						⏳ Waiting for Movie Time...
+					</p>
+					<p class="mt-1 text-xs" style="color: rgba(255,255,255,0.25);">
+						The host will spin the wheel when everyone's ready
+					</p>
+				</div>
+			</div>
+		{/if}
 
 		</div>
 	</div>

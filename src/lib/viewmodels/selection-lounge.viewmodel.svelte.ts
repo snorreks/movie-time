@@ -1,5 +1,6 @@
 // src/lib/viewmodels/selection-lounge.viewmodel.svelte.ts
 
+import { auth } from "$lib/client/firebase/auth.js";
 import {
 	deleteField,
 	doc,
@@ -13,7 +14,7 @@ import type { Nomination, Session, SessionUser } from "$types";
 
 const INITIAL_TICKETS = 3;
 
-type SelectionLoungeViewModelType = {
+	type SelectionLoungeViewModelType = {
 	/** "loading" → auth resolving | "join" → name form | "lounge" → main | "reveal" → winner screen */
 	readonly view: "loading" | "join" | "lounge" | "reveal";
 	readonly nominations: Nomination[];
@@ -25,15 +26,24 @@ type SelectionLoungeViewModelType = {
 	readonly conciergeError: string | undefined;
 	readonly useAi: boolean;
 	readonly isHost: boolean;
+	readonly canStartReveal: boolean;
 	readonly username: string;
 	readonly isJoinLoading: boolean;
 	readonly joinError: string | undefined;
-	initialize(options: { sessionId: string; ssrSession: Session; ssrSessionUser: SessionUser | null }): Promise<void>;
+	initialize(options: {
+		sessionId: string;
+		ssrSession: Session;
+		ssrSessionUser: SessionUser | null;
+	}): Promise<void>;
 	joinLounge(): Promise<void>;
 	submitConciergePrompt(): Promise<void>;
 	castVote(options: { nominationId: string }): Promise<void>;
 	cancelVote(options: { nominationId: string }): Promise<void>;
-	vetoNomination(options: { nominationId: string; reason?: string }): Promise<void>;
+	vetoNomination(options: {
+		nominationId: string;
+		reason?: string;
+	}): Promise<void>;
+	deleteNomination(options: { nominationId: string }): Promise<void>;
 	togglePizza(): Promise<void>;
 	startReveal(): Promise<void>;
 	resetReveal(): Promise<void>;
@@ -68,6 +78,10 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		return !!sessionService.uid && sessionService.uid === this.session?.hostId;
 	}
 
+	get canStartReveal(): boolean {
+		return this.isHost && this.nominations.some((n) => !n.vetoed);
+	}
+
 	dispose = (): void => {
 		this._stopSync?.();
 	};
@@ -89,25 +103,56 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		this.sessionUsers = options.ssrSession.users || [];
 
 		await sessionService.initialize();
-		logger.debug("[SelectionLoungeViewModel] Auth resolved, uid:", sessionService.uid ?? "none");
+		logger.debug(
+			"[SelectionLoungeViewModel] Auth resolved, uid:",
+			sessionService.uid ?? "none",
+		);
 
 		if (options.ssrSessionUser) {
 			logger.info("[SelectionLoungeViewModel] User already joined (SSR)");
 			this.sessionUser = options.ssrSessionUser;
 			this._startLiveSync(options.sessionId);
-			this.view = options.ssrSession.status === "revealed" ? "reveal" : "lounge";
+			this.view =
+				options.ssrSession.status === "revealed" ? "reveal" : "lounge";
 			return;
 		}
 
 		if (sessionService.uid) {
-			const existingUser = options.ssrSession.users?.find((u) => u.uid === sessionService.uid);
+			const existingUser = options.ssrSession.users?.find(
+				(u) => u.uid === sessionService.uid,
+			);
 			if (existingUser) {
-				logger.info("[SelectionLoungeViewModel] User matched via client auth uid, re-persisting cookie");
+				logger.info(
+					"[SelectionLoungeViewModel] User matched via client auth uid, re-persisting cookie",
+				);
 				this.sessionUser = existingUser;
 				await sessionService.persistSessionCookie();
 				this._startLiveSync(options.sessionId);
-				this.view = options.ssrSession.status === "revealed" ? "reveal" : "lounge";
+				this.view =
+					options.ssrSession.status === "revealed" ? "reveal" : "lounge";
 				return;
+			}
+
+			// If user is the host (admin), auto-join them to the lounge
+			if (sessionService.uid === options.ssrSession.hostId) {
+				logger.info("[SelectionLoungeViewModel] Host detected, auto-joining lounge");
+				const hostDisplayName = auth.currentUser?.displayName || "Host";
+				this.username = hostDisplayName;
+				// Auto-join without anonymous sign-in
+				try {
+					await sessionService.joinSession({
+						sessionId: this._sessionId,
+						displayName: hostDisplayName,
+					});
+					await sessionService.persistSessionCookie();
+					this.sessionUser = sessionService.currentUser;
+					this._startLiveSync(options.sessionId);
+					this.view =
+						options.ssrSession.status === "revealed" ? "reveal" : "lounge";
+					return;
+				} catch (err) {
+					logger.error("[SelectionLoungeViewModel] Host auto-join failed:", err);
+				}
 			}
 		}
 
@@ -115,7 +160,9 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		if (saved) {
 			this.username = saved;
 		}
-		logger.info("[SelectionLoungeViewModel] User not joined, showing join form");
+		logger.info(
+			"[SelectionLoungeViewModel] User not joined, showing join form",
+		);
 		this.view = "join";
 	};
 
@@ -146,14 +193,24 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 				// Flip views based on session status
 				if (current.status === "revealed" && this.view === "lounge") {
-					logger.info("[SelectionLoungeViewModel] Status changed to revealed → switching to reveal view");
+					logger.info(
+						"[SelectionLoungeViewModel] Status changed to revealed → switching to reveal view",
+					);
 					this.view = "reveal";
 				} else if (current.status === "lobby" && this.view === "reveal") {
-					logger.info("[SelectionLoungeViewModel] Status reset to lobby → switching back to lounge");
+					logger.info(
+						"[SelectionLoungeViewModel] Status reset to lobby → switching back to lounge",
+					);
 					this.view = "lounge";
 				}
 
-				logger.debug("[SelectionLoungeViewModel] Live sync:", this.nominations.length, "noms,", this.sessionUsers.length, "users");
+				logger.debug(
+					"[SelectionLoungeViewModel] Live sync:",
+					this.nominations.length,
+					"noms,",
+					this.sessionUsers.length,
+					"users",
+				);
 			});
 		});
 
@@ -162,7 +219,7 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		});
 	};
 
-	/** Signs in anonymously, writes the user to Firestore, persists cookie, starts live sync. */
+	/** Signs in anonymously (if needed), writes the user to Firestore, persists cookie, starts live sync. */
 	joinLounge = async (): Promise<void> => {
 		if (!this.username.trim()) {
 			this.joinError = "Please enter your name to join.";
@@ -174,8 +231,14 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		logger.info("[SelectionLoungeViewModel] joinLounge:", this.username.trim());
 
 		try {
-			await sessionService.signInAnonymously();
-			await sessionService.joinSession({ sessionId: this._sessionId, displayName: this.username.trim() });
+			// Only sign in anonymously if the user is not already authenticated (e.g., admin host)
+			if (!sessionService.uid) {
+				await sessionService.signInAnonymously();
+			}
+			await sessionService.joinSession({
+				sessionId: this._sessionId,
+				displayName: this.username.trim(),
+			});
 			await sessionService.persistSessionCookie();
 
 			logger.info("[SelectionLoungeViewModel] Join complete");
@@ -183,7 +246,8 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 			this._startLiveSync(this._sessionId);
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] joinLounge error:", err);
-			this.joinError = err instanceof Error ? err.message : "Failed to join session.";
+			this.joinError =
+				err instanceof Error ? err.message : "Failed to join session.";
 		} finally {
 			this.isJoinLoading = false;
 		}
@@ -195,31 +259,50 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		}
 		this.isConciergeLoading = true;
 		this.conciergeError = undefined;
-		const loadingId = Date.now();
-		logger.info("[SelectionLoungeViewModel] submitConciergePrompt:", { prompt: this.conciergePrompt.trim(), useAi: this.useAi });
-		snackbarService.loading(this.useAi ? "🤖 AI Concierge thinking..." : "🔍 Searching TMDB...");
+		// const loadingId = Date.now();
+		logger.info("[SelectionLoungeViewModel] submitConciergePrompt:", {
+			prompt: this.conciergePrompt.trim(),
+			useAi: this.useAi,
+		});
+		snackbarService.loading(
+			this.useAi ? "🤖 AI Concierge thinking..." : "🔍 Searching TMDB...",
+		);
 
 		try {
 			const response = await fetch("/api/concierge", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: this.conciergePrompt.trim(), useAi: this.useAi }),
+				body: JSON.stringify({
+					prompt: this.conciergePrompt.trim(),
+					useAi: this.useAi,
+				}),
 			});
 
 			const result: unknown = await response.json();
 			logger.debug("[SelectionLoungeViewModel] concierge result:", result);
 
-			if (!response.ok || (typeof result === "object" && result !== null && "error" in result)) {
-				const message = typeof result === "object" && result !== null && "error" in result
-					? String((result as Record<string, unknown>).error)
-					: "The AI Concierge could not find a movie for that prompt.";
+			if (
+				!response.ok ||
+				(typeof result === "object" && result !== null && "error" in result)
+			) {
+				const message =
+					typeof result === "object" && result !== null && "error" in result
+						? String((result as Record<string, unknown>).error)
+						: "The AI Concierge could not find a movie for that prompt.";
 				logger.warn("[SelectionLoungeViewModel] Concierge error:", message);
 				this.conciergeError = message;
 				snackbarService.error(message);
 				return;
 			}
 
-			const metadata = result as { title: string; posterUrl: string; genre: string; year: number; rating: number; synopsis: string };
+			const metadata = result as {
+				title: string;
+				posterUrl: string;
+				genre: string;
+				year: number;
+				rating: number;
+				synopsis: string;
+			};
 			logger.info("[SelectionLoungeViewModel] Got metadata:", metadata.title);
 
 			const db = getFirestoreInstance();
@@ -240,17 +323,30 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 				createdAt: new Date().toISOString(),
 			};
 
-			await updateDoc(sessionRef, { nominations: [...(this.session?.nominations || []), newNomination] });
-			logger.info("[SelectionLoungeViewModel] Nomination written:", newNomination.title);
+			await updateDoc(sessionRef, {
+				nominations: [...(this.session?.nominations || []), newNomination],
+			});
+			logger.info(
+				"[SelectionLoungeViewModel] Nomination written:",
+				newNomination.title,
+			);
+			snackbarService.clear();
 			snackbarService.success(`"${metadata.title}" added!`);
 			this.conciergePrompt = "";
 		} catch (err) {
-			logger.error("[SelectionLoungeViewModel] submitConciergePrompt error:", err);
-			this.conciergeError = err instanceof Error ? `Failed: ${err.message}` : "An unexpected error occurred.";
+			logger.error(
+				"[SelectionLoungeViewModel] submitConciergePrompt error:",
+				err,
+			);
+			this.conciergeError =
+				err instanceof Error
+					? `Failed: ${err.message}`
+					: "An unexpected error occurred.";
+			snackbarService.clear();
+
 			snackbarService.error(this.conciergeError);
 		} finally {
 			this.isConciergeLoading = false;
-			snackbarService.remove(loadingId);
 		}
 	};
 
@@ -270,7 +366,13 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 			return {
 				...nom,
 				votes: nom.votes + 1,
-				voters: [...(nom.voters || []), { uid: sessionService.uid!, displayName: this.sessionUser?.displayName || "" }],
+				voters: [
+					...(nom.voters || []),
+					{
+						uid: sessionService.uid!,
+						displayName: this.sessionUser?.displayName || "",
+					},
+				],
 			};
 		});
 
@@ -287,7 +389,10 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 		try {
 			const db = getFirestoreInstance();
-			await updateDoc(doc(db, "sessions", this._sessionId), { nominations: updatedNominations, users: updatedUsers });
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				nominations: updatedNominations,
+				users: updatedUsers,
+			});
 			logger.info("[SelectionLoungeViewModel] castVote written");
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] castVote error:", err);
@@ -325,13 +430,18 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 			return {
 				...u,
 				ticketsRemaining: u.ticketsRemaining + 1,
-				votedNominationIds: u.votedNominationIds.filter((id) => id !== options.nominationId),
+				votedNominationIds: u.votedNominationIds.filter(
+					(id) => id !== options.nominationId,
+				),
 			};
 		});
 
 		try {
 			const db = getFirestoreInstance();
-			await updateDoc(doc(db, "sessions", this._sessionId), { nominations: updatedNominations, users: updatedUsers });
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				nominations: updatedNominations,
+				users: updatedUsers,
+			});
 			logger.info("[SelectionLoungeViewModel] cancelVote written");
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] cancelVote error:", err);
@@ -339,42 +449,125 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		}
 	};
 
-	vetoNomination = async (options: { nominationId: string; reason?: string }): Promise<void> => {
+	vetoNomination = async (options: {
+		nominationId: string;
+		reason?: string;
+	}): Promise<void> => {
 		if (!sessionService.uid) {
 			return;
 		}
-		const vetoedNom = this.session?.nominations?.find((n) => n.id === options.nominationId);
+		const vetoedNom = this.session?.nominations?.find(
+			(n) => n.id === options.nominationId,
+		);
 		if (!vetoedNom) {
 			return;
 		}
-		logger.info("[SelectionLoungeViewModel] vetoNomination:", options.nominationId);
+		logger.info(
+			"[SelectionLoungeViewModel] vetoNomination:",
+			options.nominationId,
+		);
 
 		const updatedNominations = (this.session?.nominations || []).map((nom) => {
 			if (nom.id !== options.nominationId) {
 				return nom;
 			}
-			return { ...nom, vetoed: true, vetoedByUid: sessionService.uid, vetoReason: options.reason || "No reason given" };
+			return {
+				...nom,
+				vetoed: true,
+				vetoedByUid: sessionService.uid,
+				vetoReason: options.reason || "No reason given",
+			};
 		});
 
 		const updatedUsers = (this.session?.users || []).map((u) => {
 			if (!u.votedNominationIds.includes(options.nominationId)) {
 				return u;
 			}
-			const count = u.votedNominationIds.filter((id) => id === options.nominationId).length || 1;
+			const count =
+				u.votedNominationIds.filter((id) => id === options.nominationId)
+					.length || 1;
 			return {
 				...u,
 				ticketsRemaining: u.ticketsRemaining + count,
-				votedNominationIds: u.votedNominationIds.filter((id) => id !== options.nominationId),
+				votedNominationIds: u.votedNominationIds.filter(
+					(id) => id !== options.nominationId,
+				),
 			};
 		});
 
 		try {
 			const db = getFirestoreInstance();
-			await updateDoc(doc(db, "sessions", this._sessionId), { nominations: updatedNominations, users: updatedUsers });
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				nominations: updatedNominations,
+				users: updatedUsers,
+			});
 			logger.info("[SelectionLoungeViewModel] vetoNomination written");
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] vetoNomination error:", err);
 			snackbarService.error("Failed to veto nomination.");
+		}
+	};
+
+	/** Completely removes a nomination. Only the creator or host can do this. Votes are returned to users. */
+	deleteNomination = async (options: {
+		nominationId: string;
+	}): Promise<void> => {
+		if (!sessionService.uid || !this.session) {
+			return;
+		}
+
+		const nomToDelete = this.session.nominations?.find(
+			(n) => n.id === options.nominationId,
+		);
+		if (!nomToDelete) {
+			return;
+		}
+
+		// Only the nomination creator or the host can delete
+		if (
+			nomToDelete.nominatedByUid !== sessionService.uid &&
+			this.session.hostId !== sessionService.uid
+		) {
+			snackbarService.error("You do not have permission to delete this nomination.");
+			return;
+		}
+
+		logger.info(
+			"[SelectionLoungeViewModel] deleteNomination:",
+			options.nominationId,
+		);
+
+		// Return votes to users
+		const updatedUsers = (this.session?.users || []).map((u) => {
+			const voteCount =
+				u.votedNominationIds.filter((id) => id === options.nominationId).length || 0;
+			if (voteCount === 0) {
+				return u;
+			}
+			return {
+				...u,
+				ticketsRemaining: u.ticketsRemaining + voteCount,
+				votedNominationIds: u.votedNominationIds.filter(
+					(id) => id !== options.nominationId,
+				),
+			};
+		});
+
+		const updatedNominations = (this.session?.nominations || []).filter(
+			(n) => n.id !== options.nominationId,
+		);
+
+		try {
+			const db = getFirestoreInstance();
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				nominations: updatedNominations,
+				users: updatedUsers,
+			});
+			logger.info("[SelectionLoungeViewModel] deleteNomination written");
+			snackbarService.success("Nomination removed.");
+		} catch (err) {
+			logger.error("[SelectionLoungeViewModel] deleteNomination error:", err);
+			snackbarService.error("Failed to delete nomination.");
 		}
 	};
 
@@ -392,7 +585,10 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 		try {
 			const db = getFirestoreInstance();
-			await updateDoc(doc(db, "sessions", this._sessionId), { users: updatedUsers, pizzaCount });
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				users: updatedUsers,
+				pizzaCount,
+			});
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] togglePizza error:", err);
 			snackbarService.error("Failed to update pizza preference.");
@@ -402,7 +598,9 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 	startReveal = async (): Promise<void> => {
 		logger.info("[SelectionLoungeViewModel] startReveal");
 		try {
-			const eligibleNoms = (this.session?.nominations || []).filter((n) => !n.vetoed);
+			const eligibleNoms = (this.session?.nominations || []).filter(
+				(n) => !n.vetoed,
+			);
 			if (eligibleNoms.length === 0) {
 				snackbarService.error("No eligible nominations to reveal.");
 				return;
@@ -414,12 +612,20 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 			let winner: Nomination | undefined;
 			for (let i = 0; i < eligibleNoms.length; i++) {
 				rand -= weights[i];
-				if (rand <= 0) { winner = eligibleNoms[i]; break; }
+				if (rand <= 0) {
+					winner = eligibleNoms[i];
+					break;
+				}
 			}
-			if (!winner) { winner = eligibleNoms[eligibleNoms.length - 1]; }
+			if (!winner) {
+				winner = eligibleNoms[eligibleNoms.length - 1];
+			}
 
 			const db = getFirestoreInstance();
-			await updateDoc(doc(db, "sessions", this._sessionId), { winnerNominationId: winner.id, status: "revealed" });
+			await updateDoc(doc(db, "sessions", this._sessionId), {
+				winnerNominationId: winner.id,
+				status: "revealed",
+			});
 		} catch (err) {
 			logger.error("[SelectionLoungeViewModel] startReveal error:", err);
 			snackbarService.error("Failed to start reveal.");
@@ -442,9 +648,15 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		}
 	};
 
-	setConciergePrompt = (value: string): void => { this.conciergePrompt = value; };
-	setUseAi = (value: boolean): void => { this.useAi = value; };
-	setUsername = (value: string): void => { this.username = value; };
+	setConciergePrompt = (value: string): void => {
+		this.conciergePrompt = value;
+	};
+	setUseAi = (value: boolean): void => {
+		this.useAi = value;
+	};
+	setUsername = (value: string): void => {
+		this.username = value;
+	};
 }
 
 export const selectionLoungeViewModel = new SelectionLoungeViewModel();

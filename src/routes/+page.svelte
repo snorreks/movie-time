@@ -1,34 +1,42 @@
 <script lang="ts">
-	// src/routes/+page.svelte
-	import { goto } from "$app/navigation";
-	import { fade, fly } from "svelte/transition";
-	import { snackbarService } from "$lib/client/services/snackbar.svelte";
-	import Snackbar from "$lib/components/Snackbar.svelte";
-	import { adminViewModel } from "$lib/viewmodels/admin.viewmodel.svelte";
+// src/routes/+page.svelte
 
-	let showContent = $state(false);
+import { fade, fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { snackbarService } from "$lib/client/services/snackbar.svelte";
+import Snackbar from "$lib/components/Snackbar.svelte";
+import { adminViewModel } from "$lib/viewmodels/admin.viewmodel.svelte";
 
-	$effect(() => {
-		adminViewModel.initialize();
-		setTimeout(() => (showContent = true), 100);
-	});
+const handleUpdateUsername = async () => {
+	await adminViewModel.updateUsername();
+	if (adminViewModel.error === undefined) {
+		snackbarService.success("Username updated!");
+	}
+};
 
-	const handleLogin = async () => {
-		await adminViewModel.login();
-	};
+let showContent = $state(false);
 
-	const handleCreateSession = async () => {
-		await adminViewModel.createSession();
-		if (adminViewModel.createdSessionId) {
-			snackbarService.success("Session created! Share the link below.");
-		}
-	};
+$effect(() => {
+	adminViewModel.initialize();
+	setTimeout(() => (showContent = true), 100);
+});
 
-	const copyLink = () => {
-		const url = `${window.location.origin}/join/${adminViewModel.createdSessionId}`;
-		navigator.clipboard.writeText(url);
-		snackbarService.success("Link copied to clipboard!");
-	};
+const handleLogin = async () => {
+	await adminViewModel.login();
+};
+
+const handleCreateSession = async () => {
+	await adminViewModel.createSession();
+	if (adminViewModel.createdSessionId) {
+		snackbarService.success("Session created! Share the link below.");
+	}
+};
+
+const copyLink = () => {
+	const url = `${window.location.origin}/lounge/${adminViewModel.createdSessionId}`;
+	navigator.clipboard.writeText(url);
+	snackbarService.success("Link copied to clipboard!");
+};
 </script>
 
 	<svelte:head>
@@ -180,6 +188,75 @@
 					</button>
 				</div>
 			{:else}
+				<!-- Username Editing Card -->
+				<div
+					class="group relative overflow-hidden rounded-3xl border p-8 shadow-2xl"
+					style="background: rgba(255, 255, 255, 0.05);
+						backdrop-filter: blur(20px);
+						border-color: rgba(212, 175, 55, 0.2);"
+					in:fly={{ y: 40, duration: 800, delay: 400 }}
+				>
+					<div
+						class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+						style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);"
+					></div>
+
+					<h2 class="mb-6 text-center text-lg font-semibold" style="color: var(--color-text);">
+						Admin Profile
+					</h2>
+
+					{#if adminViewModel.currentUsername}
+						<p class="mb-4 text-center text-sm opacity-60" style="color: var(--color-text);">
+							Current username: <span class="font-semibold" style="color: var(--color-primary);">{adminViewModel.currentUsername}</span>
+						</p>
+					{/if}
+
+					<div class="mb-6">
+						<label
+							for="admin-username"
+							class="mb-2 block text-xs font-semibold uppercase tracking-widest opacity-60"
+							style="color: var(--color-text);"
+						>
+							New Username
+						</label>
+						<input
+							id="admin-username"
+							type="text"
+							placeholder="Enter new username"
+							value={adminViewModel.adminUsername}
+							oninput={(e) => adminViewModel.setAdminUsername((e.currentTarget as HTMLInputElement).value)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') handleUpdateUsername();
+							}}
+							class="w-full rounded-xl border bg-transparent py-4 pl-4 pr-4 text-sm outline-none transition-all placeholder:opacity-40 focus:ring-2 focus:ring-offset-2"
+							style="color: var(--color-text);
+								border-color: rgba(255,255,255,0.15);
+								--tw-ring-color: var(--color-primary);
+								--tw-ring-offset-color: transparent;"
+						/>
+					</div>
+
+					<button
+						type="button"
+						onclick={handleUpdateUsername}
+						disabled={adminViewModel.isLoading}
+						class="group relative mb-6 w-full overflow-hidden rounded-xl px-6 py-4 text-base font-bold transition-all duration-300
+							hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+						style="background: linear-gradient(135deg, #D4AF37 0%, #F5E6A3 50%, #D4AF37 100%);
+							color: #08080A;
+							box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);"
+					>
+						<div
+							class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-full"
+						></div>
+						{#if adminViewModel.isLoading}
+							<span class="inline-block animate-spin">⏳</span>
+						{:else}
+							✏️ Update Username
+						{/if}
+					</button>
+				</div>
+
 				<!-- Session Creation Card -->
 				<div
 					class="group relative overflow-hidden rounded-3xl border p-8 shadow-2xl"

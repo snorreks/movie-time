@@ -10,19 +10,33 @@ type Props = {
 	hasVoted: boolean;
 	ticketsRemaining: number;
 	currentUserId?: string;
+	canDelete: boolean;
 	onVote: () => void;
 	onCancelVote: () => void;
 	onVeto: (reason: string) => void;
+	onDelete: () => void;
 	sessionUsers: SessionUser[];
 };
 
-const { nomination, hasVoted, ticketsRemaining, currentUserId, onVote, onCancelVote, onVeto, sessionUsers }: Props = $props();
+const {
+	nomination,
+	hasVoted,
+	ticketsRemaining,
+	currentUserId,
+	canDelete,
+	onVote,
+	onCancelVote,
+	onVeto,
+	onDelete,
+	sessionUsers,
+}: Props = $props();
 
 let ambientColor = $state("rgba(212,175,55,0.15)");
 let ambientRgb = $state("212,175,55");
 let imgEl = $state<HTMLImageElement | undefined>(undefined);
 let isHovered = $state(false);
 let showVetoDialog = $state(false);
+let showDeleteDialog = $state(false);
 let vetoReason = $state("");
 let customReason = $state("");
 
@@ -127,16 +141,16 @@ const getUserAvatar = (uid: string): string => {
 		<!-- Nominated by — bottom left over poster -->
 		{#if nomination.nominatedByUid}
 			<div
-				class="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full px-2 py-1"
+				class="absolute bottom-2 left-2 flex flex-shrink-0 items-center gap-1.5 overflow-hidden rounded-full px-2 py-1"
 				style="background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08);"
 			>
 				<img
 					src={getUserAvatar(nomination.nominatedByUid)}
 					alt={getUserName(nomination.nominatedByUid)}
-					class="h-5 w-5 rounded-full object-cover ring-1"
+					class="h-5 w-5 flex-shrink-0 rounded-full object-cover ring-1"
 					style="ring-color: rgba({ambientRgb},0.5);"
 				/>
-				<span class="text-xs font-medium" style="color: rgba(255,255,255,0.8);">
+				<span class="truncate text-xs font-medium" style="color: rgba(255,255,255,0.8);">
 					{getUserName(nomination.nominatedByUid)}
 				</span>
 			</div>
@@ -144,41 +158,41 @@ const getUserAvatar = (uid: string): string => {
 	</div>
 
 	<!-- Content -->
-	<div class="flex flex-1 flex-col p-4">
+	<div class="flex flex-1 flex-col overflow-hidden p-4">
 		<!-- Title + meta -->
 		<h3
-			class="mb-0.5 text-base font-bold leading-snug"
+			class="mb-0.5 truncate text-base font-bold leading-snug"
 			class:line-through={nomination.vetoed}
 			style="font-family: var(--font-display); color: var(--color-text);"
 		>
 			{nomination.title}
 		</h3>
-		<p class="mb-3 text-xs" style="color: rgba(255,255,255,0.4);">
+		<p class="mb-3 truncate text-xs" style="color: rgba(255,255,255,0.4);">
 			{nomination.genre} · {nomination.year} · ⭐ {nomination.rating}
 		</p>
 
 		<!-- Voters strip -->
 		{#if nomination.voters && nomination.voters.length > 0}
-			<div class="mb-3 flex items-center gap-1">
-				<div class="flex -space-x-2">
+			<div class="mb-3 flex items-center gap-1 overflow-hidden">
+				<div class="flex flex-shrink-0 items-center">
 					{#each nomination.voters.slice(0, 6) as voter}
 						<img
 							src={getUserAvatar(voter.uid)}
 							alt={voter.displayName}
 							title={voter.displayName}
-							class="h-6 w-6 rounded-full object-cover ring-1 ring-black"
+							class="h-6 w-6 rounded-full object-cover ring-1 ring-black -ml-1 first:ml-0"
 						/>
 					{/each}
 					{#if nomination.voters.length > 6}
 						<div
-							class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ring-1 ring-black"
+							class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ring-1 ring-black -ml-1"
 							style="background: rgba({ambientRgb},0.4); color: var(--color-text);"
 						>
 							+{nomination.voters.length - 6}
 						</div>
 					{/if}
 				</div>
-				<span class="text-xs" style="color: rgba(255,255,255,0.35);">voted</span>
+				<span class="flex-shrink-0 text-xs" style="color: rgba(255,255,255,0.35);">voted</span>
 			</div>
 		{/if}
 
@@ -213,15 +227,27 @@ const getUserAvatar = (uid: string): string => {
 				{/if}
 
 				<!-- Veto -->
-				<button
-					type="button"
-					onclick={() => (showVetoDialog = true)}
-					class="rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 hover:bg-red-900/20 active:scale-95"
-					style="color: var(--color-accent); border-color: rgba(200,35,51,0.3);"
-					title="Veto this movie"
-				>
-					✗
-				</button>
+				{#if canDelete}
+					<button
+						type="button"
+						onclick={() => (showDeleteDialog = true)}
+						class="rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 hover:bg-red-900/30 active:scale-95"
+						style="color: var(--color-accent); border-color: rgba(200,35,51,0.3);"
+						title="Delete this nomination"
+					>
+						🗑 Delete
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={() => (showVetoDialog = true)}
+						class="rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-200 hover:bg-red-900/20 active:scale-95"
+						style="color: var(--color-accent); border-color: rgba(200,35,51,0.3);"
+						title="Veto this movie"
+					>
+						✗
+					</button>
+				{/if}
 			</div>
 		{:else if nomination.vetoReason}
 			<p class="text-xs italic" style="color: rgba(200,35,51,0.7);">
@@ -294,9 +320,55 @@ const getUserAvatar = (uid: string): string => {
 			>
 				Confirm Veto
 			</button>
+		<button
+			type="button"
+			onclick={() => { showVetoDialog = false; vetoReason = ""; customReason = ""; }}
+			class="w-full rounded-xl py-2.5 text-sm transition-all hover:bg-white/5"
+			style="color: rgba(255,255,255,0.4);"
+		>
+			Cancel
+		</button>
+	</div>
+</div>
+{/if}
+
+<!-- ─── Delete dialog ─── -->
+{#if showDeleteDialog}
+	<div
+		class="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+		style="background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);"
+		onclick={(e) => { if (e.target === e.currentTarget) { showDeleteDialog = false; } }}
+		onkeydown={(e) => { if (e.key === "Escape") { showDeleteDialog = false; } }}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div
+			class="w-full rounded-t-3xl p-6 sm:max-w-md sm:rounded-3xl"
+			style="background: linear-gradient(160deg, #141418 0%, #0e0e12 100%); border: 1px solid rgba(200,35,51,0.2);"
+		>
+			<div class="mb-1 text-center text-2xl">🗑</div>
+			<h3 class="mb-1 text-center text-lg font-bold" style="font-family: var(--font-display); color: var(--color-text);">
+				Delete "{nomination.title}"?
+			</h3>
+			<p class="mb-5 text-center text-xs" style="color: rgba(255,255,255,0.4);">
+				This will remove the nomination and return all votes to users.
+			</p>
+
 			<button
 				type="button"
-				onclick={() => { showVetoDialog = false; vetoReason = ""; customReason = ""; }}
+				onclick={() => {
+					onDelete();
+					showDeleteDialog = false;
+				}}
+				class="mb-2 w-full rounded-xl py-3 text-sm font-bold transition-all hover:brightness-110 active:scale-[0.98]"
+				style="background: var(--color-accent); color: white;"
+			>
+				Yes, Delete
+			</button>
+			<button
+				type="button"
+				onclick={() => { showDeleteDialog = false; }}
 				class="w-full rounded-xl py-2.5 text-sm transition-all hover:bg-white/5"
 				style="color: rgba(255,255,255,0.4);"
 			>
