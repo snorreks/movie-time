@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#08080A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="30%" r="50%">
+      <stop offset="0%" style="stop-color:#D4AF37;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#D4AF37;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+  
+  <!-- Decorative circles -->
+  <circle cx="200" cy="150" r="100" fill="#D4AF37" opacity="0.1" />
+  <circle cx="1000" cy="480" r="150" fill="#8b5cf6" opacity="0.08" />
+  
+  <!-- Main icon -->
+  <text x="600" y="240" font-size="120" text-anchor="middle" fill="#D4AF37">🎬</text>
+  
+  <!-- Title -->
+  <text x="600" y="340" font-family="Georgia, serif" font-size="72" font-weight="bold" text-anchor="middle" fill="#D4AF37">
+    The Director's Lounge
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="600" y="400" font-family="Arial, sans-serif" font-size="32" text-anchor="middle" fill="#FDFCFA" opacity="0.7">
+    Movie Night • Vote • Watch
+  </text>
+  
+  <!-- Decorative line -->
+  <line x1="400" y1="430" x2="800" y2="430" stroke="#D4AF37" stroke-width="2" opacity="0.4" />
+  
+  <!-- Bottom text -->
+  <text x="600" y="480" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#D4AF37" opacity="0.6">
+    movie-time-onboardr.vercel.app
+  </text>
+</svg>

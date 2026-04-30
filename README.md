@@ -2,21 +2,29 @@
 
 A cinematic movie night coordination app built with SvelteKit, Firebase, and AI.
 
+**🎬 Live App:** [movie-time-onboardr.vercel.app](https://movie-time-onboardr.vercel.app/)
+
 ## Features
 
 - **Session-based movie nights**: Create or join sessions with unique shareable URLs
+- **Admin dashboard**: Manage sessions, edit your username, and host the lounge
+- **Admin joins lounge**: The host can join their own lounge to participate and spin the wheel
 - **AI Concierge**: Get movie recommendations powered by Google Gemini and TMDB
 - **Golden Ticket voting**: Each user gets 3 votes to allocate to nominated movies
 - **Veto system**: Hosts can veto movies to exclude them from selection
-- **Grand Reveal**: CS:GO-style animated reveal of the winning movie
+- **Delete nominations**: Nomination creators or the host can completely remove a nomination (votes are returned to users)
+- **Grand Reveal**: CS:GO-style animated reel reveal of the winning movie
+- **Spin the Wheel**: Only the host can trigger the final reveal
+- **Waiting state**: Non-admin users see "Waiting for Movie Time..." until the host spins
 - **Pizza toggle**: Track who wants pizza for the movie night
-- **No login required**: Anonymous Firebase auth with localStorage usernames
+- **Session persistence**: Admin sessions are stored via HTTP-only cookies
+- **Username management**: Users (including admins) can set and update their display names
 
 ## Tech Stack
 
 - **Framework**: SvelteKit with Svelte 5 runes
 - **Styling**: Tailwind CSS 4 with custom design tokens (cinematic dark theme)
-- **Backend**: Firebase (Firestore, Anonymous Auth)
+- **Backend**: Firebase (Firestore, Auth with Admin SDK)
 - **AI**: Genkit with Google Gemini 2.5 Flash
 - **Movie Data**: TMDB API
 - **Testing**: Playwright with Bun
@@ -150,22 +158,23 @@ src/
 ├── lib/
 │   ├── client/
 │   │   ├── firebase/      # Firebase client SDK initialization
-│   │   └── services/      # Client-side services (session)
+│   │   └── services/      # Client-side services (session, snackbar, avatar)
 │   ├── server/
 │   │   ├── firebase/      # Firebase Admin SDK initialization
 │   │   └── genkit/        # Genkit AI flows
 │   ├── shared/
 │   │   ├── types/         # Shared TypeScript types
 │   │   └── logger.ts      # Logging utility
-│   └── viewmodels/        # ViewModels (Svelte 5 runes pattern)
+│   ├── viewmodels/        # ViewModels (Svelte 5 runes pattern)
+│   └── components/        # Reusable Svelte components
 ├── routes/
-│   ├── +page.svelte      # Entry Hall (create/join sessions)
+│   ├── +page.svelte            # Admin panel (create/join sessions)
+│   ├── api/auth/session/       # Session cookie management
 │   └── lounge/
 │       └── [sessionId]/
 │           ├── +page.svelte      # Selection Lounge
-│           └── reveal/
-│               └── +page.svelte  # Grand Reveal
-└── components/            # Reusable Svelte components
+│           └── +page.server.ts   # Server-side auth check
+└── hooks.server.ts              # Session cookie verification
 ```
 
 ## Available Scripts

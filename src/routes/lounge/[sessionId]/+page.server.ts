@@ -14,7 +14,7 @@ import type { PageServerLoad } from "./$types";
  * - `session`     – the full session document (nominations, users, etc.)
  * - `sessionUser` – the matching SessionUser entry, or null if not joined yet
  */
-export const load: PageServerLoad = async ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const sessionId = params.sessionId;
 	const uid = locals.uid;
 
@@ -52,5 +52,6 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		session,
 		sessionUser,
+		pageUrl: url.origin + url.pathname,
 	};
 };

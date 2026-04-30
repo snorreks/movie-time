@@ -1,21 +1,29 @@
 <script lang="ts">
 // src/routes/lounge/[sessionId]/+page.svelte
-
-import { onMount } from "svelte";
 import { fade, fly, scale } from "svelte/transition";
-import { getAvatarUrl } from "$lib/client/services/avatar.svelte";
+import { onMount } from "svelte";
 import { sessionService } from "$lib/client/services/session.svelte";
-import GrandReveal from "$lib/components/GrandReveal.svelte";
-import NominationCard from "$lib/components/NominationCard.svelte";
-import Snackbar from "$lib/components/Snackbar.svelte";
 import { selectionLoungeViewModel } from "$lib/viewmodels/selection-lounge.viewmodel.svelte";
+import { getAvatarUrl } from "$lib/client/services/avatar.svelte";
+import NominationCard from "$lib/components/NominationCard.svelte";
+import GrandReveal from "$lib/components/GrandReveal.svelte";
+import Snackbar from "$lib/components/Snackbar.svelte";
 
 let { data } = $props<{
 	data: {
 		session: import("$types").Session;
 		sessionUser: import("$types").SessionUser | null;
+		pageUrl: string;
 	};
 }>();
+
+onMount(() => {
+	selectionLoungeViewModel.initialize({
+		sessionId: data.session.id,
+		ssrSession: data.session,
+		ssrSessionUser: data.sessionUser,
+	});
+});
 
 onMount(() => {
 	selectionLoungeViewModel.initialize({
@@ -33,6 +41,20 @@ onMount(() => {
 			: `The Director's Lounge${selectionLoungeViewModel.session?.name ? ` — ${selectionLoungeViewModel.session.name}` : ""}`}
 	</title>
 	<meta name="description" content="Join a movie night lounge and vote for the perfect film to watch with friends." />
+	<!-- Open Graph -->
+	<meta property="og:title" content={selectionLoungeViewModel.session?.name ? `${selectionLoungeViewModel.session.name} — Movie Night` : "The Director's Lounge — Movie Night"} />
+	<meta property="og:description" content="Join the lounge, nominate movies, vote with golden tickets, and let the AI Concierge pick the perfect watch!" />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={data.pageUrl} />
+	<meta property="og:image" content="{new URL('/og-image.svg', data.pageUrl).href}" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:site_name" content="The Director's Lounge" />
+	<!-- Twitter Card -->
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={selectionLoungeViewModel.session?.name ? `${selectionLoungeViewModel.session.name} — Movie Night` : "The Director's Lounge — Movie Night"} />
+	<meta name="twitter:description" content="Join the lounge, nominate movies, vote with golden tickets, and let the AI Concierge pick the perfect watch!" />
+	<meta name="twitter:image" content="{new URL('/og-image.svg', data.pageUrl).href}" />
 </svelte:head>
 
 <!-- ═══════════════════════════ LOADING ═══════════════════════════ -->
