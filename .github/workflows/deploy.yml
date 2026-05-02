@@ -1,5 +1,5 @@
 # .github/workflows/deploy.yml
-name: Deploy to Vercel
+name: Deploy to Vercel (Production)
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -8,16 +8,10 @@ env:
 on:
   push:
     branches: [master]
-  pull_request:
-    branches: [master]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        bun-version: [latest]
 
     steps:
       - name: Checkout code
@@ -26,8 +20,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
-          bun-version: ${{ matrix.bun-version }}
-          # Enable Bun cache
+          bun-version: latest
           cache: true
 
       - name: Cache node_modules
@@ -48,15 +41,9 @@ jobs:
 
       - name: Pull Vercel Environment Information
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-
-      - name: Pull Vercel Environment Information (Preview)
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.event_name == 'pull_request'
 
       - name: Build Project Artifacts
         run: |
-          # Create .env.production with PUBLIC_ vars from GitHub secrets
           cat > .env.production << 'EOF'
           PUBLIC_FIREBASE_API_KEY="${{ secrets.PUBLIC_FIREBASE_API_KEY }}"
           PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.PUBLIC_FIREBASE_AUTH_DOMAIN }}"
@@ -67,9 +54,7 @@ jobs:
           PUBLIC_LOG_LEVEL="${{ secrets.PUBLIC_LOG_LEVEL }}"
           EOF
           echo "Created .env.production with PUBLIC_ vars"
-          head -3 .env.production
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
@@ -80,35 +65,5 @@ jobs:
           FLAVOR: production
           PUBLIC_FLAVOR: production
 
-      - name: Build Project Artifacts (Preview)
-        run: |
-          # Create .env.preview with PUBLIC_ vars from GitHub secrets
-          cat > .env.preview << 'EOF'
-          PUBLIC_FIREBASE_API_KEY="${{ secrets.PUBLIC_FIREBASE_API_KEY }}"
-          PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.PUBLIC_FIREBASE_AUTH_DOMAIN }}"
-          PUBLIC_FIREBASE_PROJECT_ID="${{ secrets.PUBLIC_FIREBASE_PROJECT_ID }}"
-          PUBLIC_FIREBASE_STORAGE_BUCKET="${{ secrets.PUBLIC_FIREBASE_STORAGE_BUCKET }}"
-          PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}"
-          PUBLIC_FIREBASE_APP_ID="${{ secrets.PUBLIC_FIREBASE_APP_ID }}"
-          PUBLIC_LOG_LEVEL="${{ secrets.PUBLIC_LOG_LEVEL }}"
-          EOF
-          echo "Created .env.preview with PUBLIC_ vars"
-          vercel build --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.event_name == 'pull_request'
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GCLOUD_PROJECT: ${{ secrets.GCLOUD_PROJECT }}
-          FLAVOR: preview
-          PUBLIC_FLAVOR: preview
-
       - name: Deploy Project Artifacts to Vercel
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-
-      - name: Deploy Project Artifacts to Vercel (Preview)
-        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
-        if: github.event_name == 'pull_request'
