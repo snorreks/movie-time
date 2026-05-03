@@ -4,7 +4,7 @@ import { TMDB_API_READ_ACCESS_TOKEN } from "$env/static/private";
 import { logger } from "$logger";
 
 const MODEL_GEMINI = "googleai/gemini-3.1-flash-lite-preview";
-const OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const OPENROUTER_MODEL = "openrouter/free";
 
 // Lazy initialization - only create Genkit instance when needed
 let ai: ReturnType<typeof genkit> | null = null;

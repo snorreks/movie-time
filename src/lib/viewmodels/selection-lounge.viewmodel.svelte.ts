@@ -14,7 +14,7 @@ import type { Nomination, Session, SessionUser } from "$types";
 
 const INITIAL_TICKETS = 3;
 
-	type SelectionLoungeViewModelType = {
+type SelectionLoungeViewModelType = {
 	/** "loading" → auth resolving | "join" → name form | "lounge" → main | "reveal" → winner screen */
 	readonly view: "loading" | "join" | "lounge" | "reveal";
 	readonly nominations: Nomination[];
@@ -135,7 +135,9 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 
 			// If user is the host (admin), auto-join them to the lounge
 			if (sessionService.uid === options.ssrSession.hostId) {
-				logger.info("[SelectionLoungeViewModel] Host detected, auto-joining lounge");
+				logger.info(
+					"[SelectionLoungeViewModel] Host detected, auto-joining lounge",
+				);
 				const hostDisplayName = auth.currentUser?.displayName || "Host";
 				this.username = hostDisplayName;
 				// Auto-join without anonymous sign-in
@@ -151,7 +153,10 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 						options.ssrSession.status === "revealed" ? "reveal" : "lounge";
 					return;
 				} catch (err) {
-					logger.error("[SelectionLoungeViewModel] Host auto-join failed:", err);
+					logger.error(
+						"[SelectionLoungeViewModel] Host auto-join failed:",
+						err,
+					);
 				}
 			}
 		}
@@ -528,7 +533,9 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 			nomToDelete.nominatedByUid !== sessionService.uid &&
 			this.session.hostId !== sessionService.uid
 		) {
-			snackbarService.error("You do not have permission to delete this nomination.");
+			snackbarService.error(
+				"You do not have permission to delete this nomination.",
+			);
 			return;
 		}
 
@@ -540,7 +547,8 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		// Return votes to users
 		const updatedUsers = (this.session?.users || []).map((u) => {
 			const voteCount =
-				u.votedNominationIds.filter((id) => id === options.nominationId).length || 0;
+				u.votedNominationIds.filter((id) => id === options.nominationId)
+					.length || 0;
 			if (voteCount === 0) {
 				return u;
 			}
@@ -599,7 +607,7 @@ class SelectionLoungeViewModel implements SelectionLoungeViewModelType {
 		logger.info("[SelectionLoungeViewModel] startReveal");
 		try {
 			const eligibleNoms = (this.session?.nominations || []).filter(
-				(n) => !n.vetoed,
+				(n) => !n.vetoed && n.votes > 0,
 			);
 			if (eligibleNoms.length === 0) {
 				snackbarService.error("No eligible nominations to reveal.");
